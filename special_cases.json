@@ -1,0 +1,18 @@
+{
+  "gba": {
+    "skip": [],
+    "redirect": {}
+  },
+  "ngp": {
+    "skip": [],
+    "redirect": {}
+  },
+  "pce": {
+    "skip": [],
+    "redirect": {}
+  },
+  "pcecd": {
+    "skip": [],
+    "redirect": {}
+  }
+}
