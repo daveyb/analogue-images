@@ -50,7 +50,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 TOOL_NAME = "analogue-image-gen"
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 # libretro-thumbnails repository info
 CONSOLE_REPOS = {
@@ -82,9 +82,11 @@ POCKET_BIN_TARGET_HEIGHT = 165
 # pce_thumbs.bin format constants (the bundle file the Pocket firmware reads
 # for PCE Library list-view thumbnails)
 PCE_THUMBS_MAGIC = bytes([0x02, 0x46, 0x54, 0x41])  # "\x02FTA" version 2
-PCE_THUMBS_HASH_SLOTS = 8192       # number of entries in the CRC hash table
-PCE_THUMBS_HASH_ENTRY_SIZE = 8     # bytes per hash table entry
-PCE_THUMBS_HEADER_SIZE = 12 + PCE_THUMBS_HASH_SLOTS * PCE_THUMBS_HASH_ENTRY_SIZE  # 65548
+PCE_THUMBS_HASH_SLOTS = 8192  # number of entries in the CRC hash table
+PCE_THUMBS_HASH_ENTRY_SIZE = 8  # bytes per hash table entry
+PCE_THUMBS_HEADER_SIZE = (
+    12 + PCE_THUMBS_HASH_SLOTS * PCE_THUMBS_HASH_ENTRY_SIZE
+)  # 65548
 # Thumbnail height for images embedded in pce_thumbs.bin.
 # Hardware testing confirmed that 165 px (= POCKET_BIN_TARGET_HEIGHT) displays
 # on the Pocket list view; the previously-tried 121 px did not show anything.
@@ -96,16 +98,14 @@ DEVICE_FILES = {
     "pocket": "Analogue_Pocket.json",
 }
 
-# Pocket image output directories per console.
-# Directory name = lowercase shortname from core.json metadata, per Analogue developer docs:
-#   https://www.analogue.co/developer/docs/library
-# Directory name = platform_id (lowercase) from the core's core.json metadata.platform_ids[].
-# On FAT32/exFAT the case is irrelevant, but lowercase matches the Analogue spec exactly:
-#   Cores/mincer_ray.GBA/core.json           → platform_ids: ["gba"]  → System/Library/Images/gba/
-#   Cores/Mazamars312.Neo Geo Pocket/core.json → platform_ids: ["ngp"] → System/Library/Images/ngp/
-#   Cores/agg23.PC Engine/core.json          → platform_ids: ["pce"]  → System/Library/Images/pce/
-#   Cores/Mazamars312.PC Engine CD/...       → platform_ids: ["pcecd"]→ System/Library/Images/pcecd/
-POCKET_IMAGE_DIRS = {
+# Per-console SD card output directories for .bin image files.
+# Used by both Pocket and Duo devices; entries are keyed by platform_id per the
+# Analogue developer docs: https://www.analogue.co/developer/docs/library
+# Device-specific notes:
+#   gba, ngp  — Pocket only (the Duo does not have cartridge slots for these)
+#   pce       — Both Pocket (HuCard) and Duo (HuCard)
+#   pcecd     — Duo only (the Pocket has no CD unit)
+CONSOLE_IMAGE_DIRS = {
     "gba": Path("System") / "Library" / "Images" / "gba",
     "ngp": Path("System") / "Library" / "Images" / "ngp",
     "pce": Path("System") / "Library" / "Images" / "pce",
@@ -139,7 +139,6 @@ POCKET_SYSTEM_IDS = {
     0x04: "gg",  # Game Gear (unverified — placeholder)
     0x06: "ngp",  # Neo Geo Pocket / Color (verified: Dark Arms, Dive Alert, etc.)
     0x07: "pce",  # PC Engine / TurboGrafx-16 (verified: Ninja Spirit, Military Madness, etc.)
-    0x08: "pcecd",  # PC Engine CD (unverified — placeholder)
 }
 
 # Duo played-games database flags → console key mapping.
@@ -562,9 +561,7 @@ def build_duo_db_lookup(sd_root: Path, console_key: str) -> dict[str, str]:
         lookup[subst_name] = game["crc"]
         logger.debug("Duo DB [%s]: %r → %s", console_key, game["name"], game["crc"])
 
-    logger.info(
-        "Built Duo DB CRC lookup for %s: %d entries", console_key, len(lookup)
-    )
+    logger.info("Built Duo DB CRC lookup for %s: %d entries", console_key, len(lookup))
     return lookup
 
 
@@ -602,9 +599,7 @@ def get_rom_game_names(sd_root: Path, console_key: str) -> set[str]:
     for f in rom_dir.iterdir():
         if f.is_file() and f.suffix.lower() in extensions:
             names.add(_apply_libretro_substitution(f.stem))
-    logger.debug(
-        "Found %d ROM file(s) for %s in %s", len(names), console_key, rom_dir
-    )
+    logger.debug("Found %d ROM file(s) for %s in %s", len(names), console_key, rom_dir)
     return names
 
 
@@ -805,8 +800,7 @@ def download_and_extract_repo(
             pass
 
     count = sum(
-        len(list((console_cache / d).glob("*.png")))
-        for d in IMAGE_TYPE_DIRS.values()
+        len(list((console_cache / d).glob("*.png"))) for d in IMAGE_TYPE_DIRS.values()
     )
     _tui_clear()
     print(f"  ↓ {label}  {count} images cached")
@@ -1287,7 +1281,8 @@ def match_game_to_crc(
             if key.lower() == norm_lower:
                 logger.debug(
                     "Subtitle-normalised case-insensitive DAT match: %s → %s",
-                    game_name, key,
+                    game_name,
+                    key,
                 )
                 return crc
         norm_base = REGION_TAG_RE.sub("", norm_name).strip()
@@ -1298,7 +1293,8 @@ def match_game_to_crc(
                 if key_base.lower() == norm_base_lower:
                     logger.debug(
                         "Subtitle-normalised base-title DAT match: %s → %s",
-                        game_name, key,
+                        game_name,
+                        key,
                     )
                     return crc
 
@@ -1440,9 +1436,7 @@ def _pack_thumbs_bin(entries: list[tuple[int, bytes]]) -> bytes:
     )
 
 
-def write_duo_thumbs_bin(
-    entries: list[tuple[int, bytes]], output_path: Path
-) -> bool:
+def write_duo_thumbs_bin(entries: list[tuple[int, bytes]], output_path: Path) -> bool:
     """Write a ``pce_thumbs.bin`` / ``pcecd_thumbs.bin`` for the Analogue Duo.
 
     *entries* is a list of ``(crc_int, bin_bytes)`` where *bin_bytes* is a
@@ -1522,16 +1516,22 @@ def generate_pce_thumbs_bin(source_dir: Path, output_path: Path) -> bool:
         # so that firmware-CCW + our-180° = 90° CW stored, and firmware applies
         # 90° CCW → net 0° = correct upright display.
         pixel_bytes = data[8:]
-        img = Image.frombytes("RGBA", (orig_w, orig_h), bytes(pixel_bytes), "raw", "BGRA")
+        img = Image.frombytes(
+            "RGBA", (orig_w, orig_h), bytes(pixel_bytes), "raw", "BGRA"
+        )
         img = img.rotate(180)  # correct for pce_thumbs.bin firmware rotation
         img = img.resize((thumb_w, thumb_h), Image.LANCZOS)
         thumb_pixels = img.tobytes("raw", "BGRA")
-        thumb_data = POCKET_BIN_MAGIC + struct.pack("<HH", thumb_h, thumb_w) + thumb_pixels
+        thumb_data = (
+            POCKET_BIN_MAGIC + struct.pack("<HH", thumb_h, thumb_w) + thumb_pixels
+        )
 
         entries.append((crc_val, thumb_data))
 
     if not entries:
-        logger.warning("generate_pce_thumbs_bin: no valid CRC .bin files in %s", source_dir)
+        logger.warning(
+            "generate_pce_thumbs_bin: no valid CRC .bin files in %s", source_dir
+        )
         return False
 
     raw = _pack_thumbs_bin(entries)
@@ -1540,7 +1540,9 @@ def generate_pce_thumbs_bin(source_dir: Path, output_path: Path) -> bool:
 
     logger.info(
         "Wrote %s with %d images (%d bytes total)",
-        output_path.name, len(entries), len(raw),
+        output_path.name,
+        len(entries),
+        len(raw),
     )
     return True
 
@@ -1592,8 +1594,15 @@ def process_console(
         print(f"\n▶ {console_key.upper()}  skipped (not supported on Duo)")
         return stats
 
+    # Pocket does not have a CD unit — pcecd images are only for the Duo.
+    if device == "pocket" and console_key == "pcecd":
+        print(f"\n▶ PCECD  skipped (not supported on Pocket — no CD unit)")
+        return stats
+
     if dat_lookup is not None and len(dat_lookup) == 0:
-        print(f"\n▶ {console_key.upper()}  no targets — no games in DB (launch a game first)")
+        print(
+            f"\n▶ {console_key.upper()}  no targets — no games in DB (launch a game first)"
+        )
         return stats
 
     # Header: show how many CRC targets we're scanning for
@@ -1606,7 +1615,7 @@ def process_console(
     # per-console directory; the Duo firmware then builds *_thumbs.bin from them.
     output_dir: Optional[Path] = None
     if sd_root is not None and device in ("pocket", "duo"):
-        _img_dir = POCKET_IMAGE_DIRS.get(console_key)
+        _img_dir = CONSOLE_IMAGE_DIRS.get(console_key)
         if _img_dir:
             output_dir = sd_root / _img_dir
 
@@ -1618,9 +1627,7 @@ def process_console(
         game_name = game_name_from_filename(img_path.name)
 
         # Live scanning progress bar
-        _tui_overwrite(
-            f"  [{_bar(idx, total)}] {idx}/{total}  {_trunc(game_name, 42)}"
-        )
+        _tui_overwrite(f"  [{_bar(idx, total)}] {idx}/{total}  {_trunc(game_name, 42)}")
 
         # --- Filtering ---
         skip, reason = should_skip_image(game_name, console_key, special_cases)
@@ -1702,7 +1709,9 @@ def process_console(
                     _redraw()
                     continue
 
-                ok = convert_image_to_pocket_bin(resolved, dest_crc, rotate=(device != "duo"))
+                ok = convert_image_to_pocket_bin(
+                    resolved, dest_crc, rotate=(device != "duo")
+                )
                 if ok:
                     shutil.copy2(dest_crc, dest_name)
                     if dest_db_name is not None:
@@ -1731,7 +1740,9 @@ def process_console(
                     _redraw()
                     continue
 
-                if convert_image_to_pocket_bin(resolved, dest, rotate=(device != "duo")):
+                if convert_image_to_pocket_bin(
+                    resolved, dest, rotate=(device != "duo")
+                ):
                     stats["converted"] += 1
                     _tui_match("✓", "", game_name, game_name)
                     _redraw()
@@ -1800,6 +1811,11 @@ def cmd_auto(args: argparse.Namespace) -> int:
     special_cases = load_special_cases()
     consoles = _resolve_consoles(args.console)
 
+    # Pocket has no CD unit — drop pcecd before any DB lookups or downloads.
+    if device == "pocket" and "pcecd" in consoles:
+        print("\n▶ PCECD  skipped (not supported on Pocket — no CD unit)")
+        consoles = [c for c in consoles if c != "pcecd"]
+
     # Phase 1: Download
     _ensure_requests()
     assert requests is not None  # guaranteed by _ensure_requests()
@@ -1823,7 +1839,9 @@ def cmd_auto(args: argparse.Namespace) -> int:
     # This fills in any console not already covered by a --dat-file, so both
     # sources can be combined (DAT file takes precedence where both apply).
     use_pocket_db: bool = getattr(args, "use_pocket_db", True)
-    crc_to_db_names: dict[str, dict[str, str]] = {}  # console_key → {crc: list.bin name}
+    crc_to_db_names: dict[
+        str, dict[str, str]
+    ] = {}  # console_key → {crc: list.bin name}
     if use_pocket_db and device == "pocket":
         all_games = parse_pocket_played_games(sd_root)
         # TUI: compact single-line DB summary, e.g. "Pocket DB  GBA:2  NGP:7  PCE:11"
@@ -2006,6 +2024,11 @@ def cmd_convert_only(args: argparse.Namespace) -> int:
     special_cases = load_special_cases()
     consoles = _resolve_consoles(args.console)
 
+    # Pocket has no CD unit — drop pcecd before any DB lookups or conversions.
+    if device == "pocket" and "pcecd" in consoles:
+        print("\n▶ PCECD  skipped (not supported on Pocket — no CD unit)")
+        consoles = [c for c in consoles if c != "pcecd"]
+
     # Load DAT files for CRC32-based Pocket filenames
     dat_lookups: dict[str, dict[str, str]] = {}
     if args.dat_file:
@@ -2013,7 +2036,9 @@ def cmd_convert_only(args: argparse.Namespace) -> int:
 
     # --use-pocket-db: read CRCs directly from the Pocket's played-games DB.
     use_pocket_db: bool = getattr(args, "use_pocket_db", True)
-    crc_to_db_names: dict[str, dict[str, str]] = {}  # console_key → {crc: list.bin name}
+    crc_to_db_names: dict[
+        str, dict[str, str]
+    ] = {}  # console_key → {crc: list.bin name}
     if use_pocket_db and device == "pocket":
         all_games = parse_pocket_played_games(sd_root)
         systems_desc = _describe_pocket_db_systems(all_games)
@@ -2099,7 +2124,10 @@ def cmd_convert_only(args: argparse.Namespace) -> int:
                 logger.info(
                     "Physical-only filter for %s: %d → %d entries "
                     "(%d ROM/downloaded games excluded)",
-                    console_key.upper(), before, after, before - after,
+                    console_key.upper(),
+                    before,
+                    after,
+                    before - after,
                 )
 
     total_stats = {
@@ -2190,7 +2218,9 @@ def _resolve_consoles(console_arg: str) -> list[str]:
         return ["gba", "ngp", "pce", "pcecd"]
     if console_arg in CONSOLE_REPOS:
         return [console_arg]
-    logger.error("Unknown console: %s (expected: gba, ngp, pce, pcecd, all)", console_arg)
+    logger.error(
+        "Unknown console: %s (expected: gba, ngp, pce, pcecd, all)", console_arg
+    )
     sys.exit(1)
 
 
