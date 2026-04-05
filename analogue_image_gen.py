@@ -1811,6 +1811,11 @@ def cmd_auto(args: argparse.Namespace) -> int:
     special_cases = load_special_cases()
     consoles = _resolve_consoles(args.console)
 
+    # Pocket has no CD unit — drop pcecd before any DB lookups or downloads.
+    if device == "pocket" and "pcecd" in consoles:
+        print("\n▶ PCECD  skipped (not supported on Pocket — no CD unit)")
+        consoles = [c for c in consoles if c != "pcecd"]
+
     # Phase 1: Download
     _ensure_requests()
     assert requests is not None  # guaranteed by _ensure_requests()
@@ -2018,6 +2023,11 @@ def cmd_convert_only(args: argparse.Namespace) -> int:
     cache_dir = Path(args.cache_dir).expanduser().resolve()
     special_cases = load_special_cases()
     consoles = _resolve_consoles(args.console)
+
+    # Pocket has no CD unit — drop pcecd before any DB lookups or conversions.
+    if device == "pocket" and "pcecd" in consoles:
+        print("\n▶ PCECD  skipped (not supported on Pocket — no CD unit)")
+        consoles = [c for c in consoles if c != "pcecd"]
 
     # Load DAT files for CRC32-based Pocket filenames
     dat_lookups: dict[str, dict[str, str]] = {}
