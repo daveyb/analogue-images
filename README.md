@@ -55,9 +55,11 @@ python analogue_image_gen.py "/Volumes/Pocket" --console pce
 
 # Duo — generate images for all games you've played
 python analogue_image_gen.py "/Volumes/Duo" --console all
+```
 
+```powershell
 # Windows example
-python analogue_image_gen.py "E:\\" --console pce
+python analogue_image_gen.py "E:\" --console pce
 ```
 
 Use `convert-only` to skip re-downloading images already in the local cache.
