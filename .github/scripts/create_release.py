@@ -112,9 +112,26 @@ def find_draft_releases_for_version(version: str, releases: list[dict]) -> list[
 
 
 def delete_release(tag: str) -> None:
-    """Delete a GitHub release and its associated git tag."""
+    """Delete a GitHub release and attempt to clean up its git tag.
+
+    ``--cleanup-tag`` is intentionally avoided because draft releases do not
+    always have a corresponding git ref, and the GitHub API returns HTTP 422
+    ("Reference does not exist") in that case, failing the whole workflow.
+    Instead the release is deleted first, then the tag deletion is attempted
+    separately and any 422 error is silently ignored.
+    """
     print(f"    Deleting old release {tag} …")
-    _run(["gh", "release", "delete", tag, "--yes", "--cleanup-tag"])
+    _run(["gh", "release", "delete", tag, "--yes"])
+
+    # Best-effort tag cleanup — ignore 422 if the ref was never created
+    result = _run(
+        ["gh", "api", "--method", "DELETE",
+         f"/repos/{{owner}}/{{repo}}/git/refs/tags/{tag}"],
+        check=False,
+    )
+    if result.returncode != 0 and "Reference does not exist" not in result.stderr:
+        print(f"    Warning: could not delete tag {tag}: {result.stderr.strip()}",
+              file=sys.stderr)
 
 
 def create_release(tag: str, title: str, notes: str, *, draft: bool = False) -> None:
