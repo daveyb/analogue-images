@@ -57,7 +57,7 @@ python analogue_image_gen.py "/Volumes/Pocket" --console pce
 python analogue_image_gen.py "/Volumes/Duo" --console all
 
 # Windows example
-python analogue_image_gen.py "E:\" --console pce
+python analogue_image_gen.py "E:\\" --console pce
 ```
 
 Use `convert-only` to skip re-downloading images already in the local cache.
