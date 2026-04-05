@@ -17,7 +17,7 @@ Inspired by and borrowed from [codewario](https://github.com/codewario/PocketLib
 | Console | `--console` | Pocket | Duo |
 |---------|-------------|--------|-----|
 | PC Engine / TurboGrafx-16 | `pce` | ✅ confirmed | ✅ confirmed |
-| PC Engine CD / TurboGrafx-CD | `pcecd` | ✅ confirmed | ✅ confirmed |
+| PC Engine CD / TurboGrafx-CD | `pcecd` | — | ✅ confirmed |
 | Game Boy Advance | `gba` | ✅ confirmed | — |
 | Neo Geo Pocket Color | `ngp` | ✅ confirmed | — |
 
@@ -51,16 +51,16 @@ Mount your Analogue SD card and run:
 
 ```bash
 # Pocket — generate images for all games you've played
-python analogue_image_gen.py "/Volumes/Pocket" auto --console pce
+python analogue_image_gen.py "/Volumes/Pocket" --console pce
 
 # Duo — generate images for all games you've played
-python analogue_image_gen.py "/Volumes/Duo" auto --console all
+python analogue_image_gen.py "/Volumes/Duo" --console all
 
 # Windows example
-python analogue_image_gen.py "E:\" auto --console pce
+python analogue_image_gen.py "E:\" --console pce
 ```
 
-Replace `auto` with `convert-only` to skip re-downloading images already in the local cache.
+Use `convert-only` to skip re-downloading images already in the local cache.
 
 ### What it does
 

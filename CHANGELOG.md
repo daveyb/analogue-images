@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-04-05
+
+### Fixed
+
+- README examples incorrectly included `auto` as a positional argument;
+  `auto` is the default mode and should not be passed explicitly.
+- README supported-devices table incorrectly listed PC Engine CD (`pcecd`)
+  as confirmed on the Analogue Pocket; PCECD is Duo-only.
+
 ## [0.4.0] - 2026-04-05
 
 ### Added
@@ -47,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial public release with support for GBA, NGP, PCE, and PCECD image
   generation for the Analogue Pocket and Duo.
 
-[Unreleased]: https://github.com/daveyb/analogue-images/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/daveyb/analogue-images/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/daveyb/analogue-images/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/daveyb/analogue-images/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/daveyb/analogue-images/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/daveyb/analogue-images/releases/tag/v0.2.0
