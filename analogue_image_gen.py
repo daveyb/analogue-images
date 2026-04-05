@@ -50,7 +50,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 TOOL_NAME = "analogue-image-gen"
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 # libretro-thumbnails repository info
 CONSOLE_REPOS = {
