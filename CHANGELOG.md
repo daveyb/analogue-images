@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- GitHub Actions release workflow (`.github/workflows/release.yml`) that
+  triggers on merge to `main`, parses `CHANGELOG.md`, and automatically
+  manages GitHub releases:
+  - Creates a **draft release** (tagged `v<version>-draft-<YYYYMMDD-HHmm>`)
+    when the `[Unreleased]` section has content, inferring the next SemVer
+    from change-type headings (`Removed` → major, `Added`/`Deprecated` →
+    minor, all others → patch). Each new merge replaces the previous draft.
+  - Creates a **published release** (tagged `v<version>`) when a new dated
+    version heading is found in `CHANGELOG.md` with no corresponding GitHub
+    release yet; cleans up any draft releases for that version.
+- Release helper script (`.github/scripts/create_release.py`) containing all
+  CHANGELOG parsing and `gh` CLI release management logic.
+
 ## [0.3.0] - 2026-04-05
 
 ### Changed
@@ -33,6 +48,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [Unreleased]: https://github.com/daveyb/analogue-images/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/daveyb/analogue-images/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/daveyb/analogue-images/releases/tag/v0.2.0
-```
-
-Now let me bump the version in the script and commit everything:
