@@ -89,6 +89,22 @@ The script is **idempotent**: re-running it skips files that already exist. Use 
 | `--include-roms` | off | Also generate images for downloaded ROMs, not just physical carts |
 | `--image-type` | `boxart` | Image source: `boxart`, `title`, or `snap` |
 | `--device` | auto-detected | `pocket` or `duo` (auto-detected from SD card root) |
+| `--dry-run` | off | Preview what would be done without writing or deleting any files |
+
+### Clearing images
+
+To remove all converted images from the SD card without touching the played-games database:
+
+```bash
+# Remove all images
+python analogue_image_gen.py "/Volumes/Pocket" clear-images
+
+# Remove only PC Engine images
+python analogue_image_gen.py "/Volumes/Pocket" clear-images --console pce
+
+# Preview what would be removed
+python analogue_image_gen.py "/Volumes/Pocket" clear-images --dry-run
+```
 
 ---
 

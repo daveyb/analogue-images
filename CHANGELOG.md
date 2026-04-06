@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `clear-images` mode: removes all converted `.bin` image files from the SD
+  card without modifying the played-games database (`list.bin`). Respects
+  `--console` to target a single console and `--dry-run` to preview deletions.
+  Also removes Duo `*_thumbs.bin` bundle files when present.
+
 ## [0.4.1] - 2026-04-05
 
 ### Fixed

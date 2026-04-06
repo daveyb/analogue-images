@@ -174,7 +174,7 @@ MAX_RETRIES = 3
 RETRY_BACKOFF_BASE = 2  # seconds
 
 # Valid operating modes (besides default "auto")
-VALID_MODES = {"download-only", "convert-only", "list-games"}
+VALID_MODES = {"download-only", "convert-only", "list-games", "clear-images"}
 
 # DAT file console identification patterns
 # Order matters: check pcecd before pce to avoid partial match on "PC Engine CD"
@@ -2204,6 +2204,93 @@ def cmd_list_games(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_clear_images(args: argparse.Namespace) -> int:
+    """Delete all converted .bin image files from the SD card.
+
+    Removes every ``.bin`` file from each console's image directory on the SD
+    card.  For the Duo, also removes the ``*_thumbs.bin`` bundle files.  The
+    played-games database (``System/Played Games/list.bin``) is never touched.
+    """
+    sd_root = Path(args.sd_card).resolve()
+    if not sd_root.is_dir():
+        logger.error("SD card root does not exist: %s", sd_root)
+        return 1
+
+    device = args.device or detect_device(sd_root)
+    if device is None:
+        logger.error(
+            "Could not auto-detect device type. Use --device duo or --device pocket."
+        )
+        return 1
+
+    dry_run: bool = args.dry_run
+    consoles = _resolve_consoles(args.console)
+
+    # Pocket has no CD unit — skip pcecd silently (nothing to clear).
+    if device == "pocket" and "pcecd" in consoles:
+        consoles = [c for c in consoles if c != "pcecd"]
+
+    prefix = "DRY-RUN  " if dry_run else ""
+    total_removed = 0
+    total_bytes = 0
+
+    for console_key in consoles:
+        img_dir = CONSOLE_IMAGE_DIRS.get(console_key)
+        if img_dir is None:
+            continue
+        console_dir = sd_root / img_dir
+
+        # Per-console .bin files
+        removed = 0
+        bytes_freed = 0
+        if console_dir.is_dir():
+            bin_files = sorted(console_dir.glob("*.bin"))
+            for f in bin_files:
+                size = f.stat().st_size
+                if dry_run:
+                    print(f"  {prefix}would remove  {f.relative_to(sd_root)}")
+                else:
+                    f.unlink()
+                    logger.debug("Removed %s", f)
+                removed += 1
+                bytes_freed += size
+
+        # Duo thumbs bundle (e.g. pce_thumbs.bin / pcecd_thumbs.bin)
+        thumbs_rel = DUO_THUMBS_FILES.get(console_key)
+        if thumbs_rel is not None:
+            thumbs_path = sd_root / thumbs_rel
+            if thumbs_path.exists():
+                size = thumbs_path.stat().st_size
+                if dry_run:
+                    print(
+                        f"  {prefix}would remove  {thumbs_path.relative_to(sd_root)}"
+                    )
+                else:
+                    thumbs_path.unlink()
+                    logger.debug("Removed %s", thumbs_path)
+                removed += 1
+                bytes_freed += size
+
+        kb = bytes_freed / 1024
+        action = "would remove" if dry_run else "removed"
+        print(
+            f"\n▶ {console_key.upper()}  {action} {removed} file(s)  "
+            f"({kb:.1f} KB freed)"
+        )
+        total_removed += removed
+        total_bytes += bytes_freed
+
+    if len(consoles) > 1:
+        kb_total = total_bytes / 1024
+        action = "Would remove" if dry_run else "Removed"
+        print(
+            f"\n  {prefix}TOTAL  {action} {total_removed} file(s)  "
+            f"({kb_total:.1f} KB freed)"
+        )
+
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -2261,6 +2348,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  download-only  Download thumbnail archives to local cache\n"
             "  convert-only   Convert cached images and write to SD card\n"
             "  list-games     List available game names from cache\n"
+            "  clear-images   Delete all converted images from SD card\n"
             "\n"
             "Examples:\n"
             "  %(prog)s E:\\                              "
@@ -2283,6 +2371,12 @@ def build_parser() -> argparse.ArgumentParser:
             "# List available game names\n"
             "  %(prog)s E:\\ --dry-run                     "
             "# Show what would be done\n"
+            "  %(prog)s E:\\ clear-images                  "
+            "# Remove all images from SD card\n"
+            "  %(prog)s E:\\ clear-images --console pce    "
+            "# Remove only PC Engine images\n"
+            "  %(prog)s E:\\ clear-images --dry-run        "
+            "# Preview which files would be removed\n"
         ),
     )
 
@@ -2468,6 +2562,10 @@ def main() -> int:
         return cmd_convert_only(args)
     elif mode == "list-games":
         return cmd_list_games(args)
+    elif mode == "clear-images":
+        if args.sd_card is None:
+            parser.error("SD card root is required for clear-images mode.")
+        return cmd_clear_images(args)
     else:
         # Default auto mode
         if args.sd_card is None:
