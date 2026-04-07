@@ -2208,8 +2208,9 @@ def cmd_clear_images(args: argparse.Namespace) -> int:
     """Delete all converted .bin image files from the SD card.
 
     Removes every ``.bin`` file from each console's image directory on the SD
-    card.  For the Duo, also removes the ``*_thumbs.bin`` bundle files.  The
-    played-games database (``System/Played Games/list.bin``) is never touched.
+    card. For Duo devices, also removes any matching ``*_thumbs.bin`` bundle
+    files. The played-games database (``System/Played Games/list.bin``) is
+    never touched.
     """
     sd_root = Path(args.sd_card).resolve()
     if not sd_root.is_dir():
@@ -2230,9 +2231,14 @@ def cmd_clear_images(args: argparse.Namespace) -> int:
     if device == "pocket" and "pcecd" in consoles:
         consoles = [c for c in consoles if c != "pcecd"]
 
+    # Duo does not support GBA/NGP — skip those silently.
+    if device == "duo":
+        consoles = [c for c in consoles if c not in ("gba", "ngp")]
+
     prefix = "DRY-RUN  " if dry_run else ""
     total_removed = 0
     total_bytes = 0
+    had_errors = False
 
     for console_key in consoles:
         img_dir = CONSOLE_IMAGE_DIRS.get(console_key)
@@ -2246,30 +2252,39 @@ def cmd_clear_images(args: argparse.Namespace) -> int:
         if console_dir.is_dir():
             bin_files = sorted(console_dir.glob("*.bin"))
             for f in bin_files:
-                size = f.stat().st_size
-                if dry_run:
-                    print(f"  {prefix}would remove  {f.relative_to(sd_root)}")
-                else:
-                    f.unlink()
-                    logger.debug("Removed %s", f)
-                removed += 1
-                bytes_freed += size
+                try:
+                    size = f.stat().st_size
+                    if dry_run:
+                        print(f"  {prefix}would remove  {f.relative_to(sd_root)}")
+                    else:
+                        f.unlink()
+                        logger.debug("Removed %s", f)
+                    removed += 1
+                    bytes_freed += size
+                except OSError as e:
+                    logger.error("Failed to delete %s: %s", f, e)
+                    had_errors = True
 
-        # Duo thumbs bundle (e.g. pce_thumbs.bin / pcecd_thumbs.bin)
-        thumbs_rel = DUO_THUMBS_FILES.get(console_key)
-        if thumbs_rel is not None:
-            thumbs_path = sd_root / thumbs_rel
-            if thumbs_path.exists():
-                size = thumbs_path.stat().st_size
-                if dry_run:
-                    print(
-                        f"  {prefix}would remove  {thumbs_path.relative_to(sd_root)}"
-                    )
-                else:
-                    thumbs_path.unlink()
-                    logger.debug("Removed %s", thumbs_path)
-                removed += 1
-                bytes_freed += size
+        # Duo thumbs bundle (e.g. pce_thumbs.bin / pcecd_thumbs.bin) — only on Duo
+        if device == "duo":
+            thumbs_rel = DUO_THUMBS_FILES.get(console_key)
+            if thumbs_rel is not None:
+                thumbs_path = sd_root / thumbs_rel
+                if thumbs_path.exists():
+                    try:
+                        size = thumbs_path.stat().st_size
+                        if dry_run:
+                            print(
+                                f"  {prefix}would remove  {thumbs_path.relative_to(sd_root)}"
+                            )
+                        else:
+                            thumbs_path.unlink()
+                            logger.debug("Removed %s", thumbs_path)
+                        removed += 1
+                        bytes_freed += size
+                    except OSError as e:
+                        logger.error("Failed to delete %s: %s", thumbs_path, e)
+                        had_errors = True
 
         kb = bytes_freed / 1024
         action = "would remove" if dry_run else "removed"
@@ -2288,7 +2303,7 @@ def cmd_clear_images(args: argparse.Namespace) -> int:
             f"({kb_total:.1f} KB freed)"
         )
 
-    return 0
+    return 1 if had_errors else 0
 
 
 # ---------------------------------------------------------------------------

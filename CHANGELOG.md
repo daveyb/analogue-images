@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-04-07
+
 ### Added
 
 - `clear-images` mode: removes all converted `.bin` image files from the SD
   card without modifying the played-games database (`list.bin`). Respects
   `--console` to target a single console and `--dry-run` to preview deletions.
-  Also removes Duo `*_thumbs.bin` bundle files when present.
+  Also removes matching `*_thumbs.bin` bundle files when present.
 
 ## [0.4.1] - 2026-04-05
 
@@ -63,7 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial public release with support for GBA, NGP, PCE, and PCECD image
   generation for the Analogue Pocket and Duo.
 
-[Unreleased]: https://github.com/daveyb/analogue-images/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/daveyb/analogue-images/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/daveyb/analogue-images/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/daveyb/analogue-images/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/daveyb/analogue-images/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/daveyb/analogue-images/compare/v0.2.0...v0.3.0

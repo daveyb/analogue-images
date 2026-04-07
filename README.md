@@ -89,7 +89,7 @@ The script is **idempotent**: re-running it skips files that already exist. Use 
 | `--include-roms` | off | Also generate images for downloaded ROMs, not just physical carts |
 | `--image-type` | `boxart` | Image source: `boxart`, `title`, or `snap` |
 | `--device` | auto-detected | `pocket` or `duo` (auto-detected from SD card root) |
-| `--dry-run` | off | Preview what would be done without writing or deleting any files |
+| `--dry-run` | off | Preview what would be done without writing or deleting files on the SD card |
 
 ### Clearing images
 
