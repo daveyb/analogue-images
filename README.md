@@ -1,5 +1,7 @@
 # Analogue Library Image Generator
 
+[![Tests](https://github.com/daveyb/analogue-images/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/daveyb/analogue-images/actions/workflows/test.yml)
+
 Missing game images on your Analogue Pocket or Duo?
 
 Transform this:
