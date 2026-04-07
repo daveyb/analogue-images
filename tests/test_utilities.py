@@ -128,7 +128,7 @@ class TestFilenameUtilities:
     def test_sanitize_preserves_spaces(self):
         """Preserve spaces in filenames."""
         result = _sanitize_filename("Game Title Name")
-        assert " " in result or result  # May collapse spaces
+        assert result == "Game Title Name"
 
     def test_sanitize_preserves_hyphens(self):
         """Preserve hyphens in filenames."""
