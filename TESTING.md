@@ -48,7 +48,7 @@ Name                    Stmts   Miss  Cover
 analogue_image_gen.py    1133    891    21%
 ```
 
-The tested functions have >85% coverage:
+Estimated coverage for tested areas:
 - Image conversion: ~40%
 - Parsing: ~35%
 - Utilities: ~30%

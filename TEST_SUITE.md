@@ -84,9 +84,9 @@ analogue-images/
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py                 # Shared fixtures (171 lines)
-│   ├── test_parsing.py             # 36 tests for parsing/matching
+│   ├── test_parsing.py             # 32 tests for parsing/matching
 │   ├── test_image_conversion.py    # 22 tests for image conversion
-│   └── test_utilities.py           # 18 tests for utilities
+│   └── test_utilities.py           # 22 tests for utilities
 └── .github/workflows/
     └── test.yml                    # GitHub Actions CI/CD
 ```

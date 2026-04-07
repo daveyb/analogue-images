@@ -3,25 +3,15 @@
 Tests:
   - _sanitize_filename(): Filename sanitization
   - detect_device(): Device detection from SD card root
-  - get_rom_game_names(): ROM enumeration
-  - should_skip_image(): Skip logic for physical carts vs ROMs
 """
 
-import importlib.util
+import pytest
 from pathlib import Path
 
-import pytest
+import analogue_image_gen
 
-_MODULE_PATH = Path(__file__).parent.parent / "analogue_image_gen.py"
-_MODULE_SPEC = importlib.util.spec_from_file_location(
-    "analogue_image_gen", _MODULE_PATH
-)
-_MODULE = importlib.util.module_from_spec(_MODULE_SPEC)
-assert _MODULE_SPEC is not None and _MODULE_SPEC.loader is not None
-_MODULE_SPEC.loader.exec_module(_MODULE)
-
-_sanitize_filename = _MODULE._sanitize_filename
-detect_device = _MODULE.detect_device
+_sanitize_filename = analogue_image_gen._sanitize_filename
+detect_device = analogue_image_gen.detect_device
 class TestSanitizeFilename:
     """Tests for _sanitize_filename() function."""
 
@@ -79,7 +69,7 @@ class TestSanitizeFilename:
     def test_sanitize_preserves_alphanumeric(self):
         """Preserve alphanumeric characters."""
         result = _sanitize_filename("Game123Title456")
-        assert "Game123Title456" in result or "Game123" in result
+        assert result == "Game123Title456"
 
     def test_sanitize_empty_string(self):
         """Handle empty string."""

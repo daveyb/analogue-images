@@ -104,13 +104,25 @@ def sample_dat_file(tmp_dir, sample_dat_entries):
 def sample_special_cases():
     """Return sample special_cases.json data."""
     return {
-        "console": {
+        "pce": {
             "redirect": {
                 "Bonk's Adventure (Japanese Title)": "Bonk's Adventure",
                 "Military Madness (Alt)": "Military Madness",
             },
             "skip": ["Virtual Console", "[Hack]", "[Homebrew]"],
-        }
+        },
+        "pcecd": {
+            "redirect": {},
+            "skip": [],
+        },
+        "gba": {
+            "redirect": {},
+            "skip": [],
+        },
+        "ngp": {
+            "redirect": {},
+            "skip": [],
+        },
     }
 
 
