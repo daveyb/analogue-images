@@ -30,7 +30,7 @@ Created `tests/conftest.py` with reusable fixtures:
 
 ### 4. **Unit Tests** ✅
 
-#### **test_parsing.py** (36 tests)
+#### **test_parsing.py** (32 tests)
 Tests for DAT file parsing, game matching, and configuration loading:
 - `TestParseDatFile` - Parse XML DAT files (4 tests)
 - `TestBuildDatLookup` - Build CRC lookup tables (4 tests)
@@ -49,7 +49,7 @@ Tests for image format detection and Pocket .bin conversion:
 - `TestBinFormatValidation` - Binary format validation (4 tests)
 - `TestImageConversionIntegration` - Full conversion pipeline (2 tests)
 
-#### **test_utilities.py** (18 tests)
+#### **test_utilities.py** (22 tests)
 Tests for filename sanitization and device detection:
 - `TestSanitizeFilename` - Filename character validation (11 tests)
 - `TestDetectDevice` - Pocket/Duo detection (5 tests)

@@ -235,8 +235,9 @@ class TestLoadSpecialCases:
         cases = load_special_cases(sample_special_cases_file)
         
         assert cases is not None
-        assert "redirects" in cases
-        assert "Bonk's Adventure (Japanese Title)" in cases["redirects"]
+        assert "console" in cases
+        assert "redirect" in cases["console"]
+        assert "Bonk's Adventure (Japanese Title)" in cases["console"]["redirect"]
 
     def test_load_missing_file_returns_empty(self, tmp_dir):
         """Handle missing special_cases.json with defaults."""

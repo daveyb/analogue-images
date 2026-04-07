@@ -135,7 +135,7 @@ class TestFilenameUtilities:
     def test_sanitize_preserves_hyphens(self):
         """Preserve hyphens in filenames."""
         result = _sanitize_filename("Game-Title-Name")
-        assert "-" in result or "Game" in result
+        assert result == "Game-Title-Name"
 
     def test_sanitize_preserves_parentheses(self):
         """Preserve parentheses (generally allowed in filenames)."""
