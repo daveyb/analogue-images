@@ -25,7 +25,7 @@ analogue_image_gen.py   # Entire application — ~2 700 lines
 requirements.txt        # Pillow>=10, requests>=2.28
 special_cases.json      # Per-console skip/redirect overrides (repo root)
 scripts/
-  test_image_conversion.py   # 48-56 unit tests (run without SD card)
+  test_image_conversion.py   # Image conversion test script with multiple _check() assertions (run without SD card)
   read_list_bin.py            # Diagnostic: dump list.bin contents
   generate_test_bins.py       # Generate reference .bin files for hardware testing
 CHANGELOG.md            # Keep-a-changelog format; drives auto-release
@@ -60,8 +60,9 @@ pip install -r requirements.txt
 python scripts/test_image_conversion.py
 ```
 
-48 tests always pass; 8 more run only when SD card PCE files are present. Do
-**not** delete or weaken any existing test.
+The test script runs without an SD card; a few SD-card-dependent checks print
+`[SKIP]` unless the required PCE files are present. Do **not** delete or weaken
+any existing test.
 
 ---
 
@@ -113,7 +114,7 @@ Duo. Mixing them silently misclassifies games.
 ### Fuzzy name matching — four strategies
 
 `match_game_to_crc()` tries these in order:
-1. Exact match (after libretro char substitution: `& * / : \` < > ? \ | "` → `_`)
+1. Exact match (after libretro char substitution: ``& * / : ` < > ? \ | "`` → `_`)
 2. Case-insensitive
 3. Strip region tags `(USA)`, `(Japan)`, etc.
 4. Subtitle separator normalisation (`: ` in firmware name → `_`; ` - ` in
@@ -168,7 +169,7 @@ user-visible changes.
 | Pitfall | Details |
 |---------|---------|
 | Wrong CRC offset in `list.bin` | Use offset `+4` (ROM CRC), not `+8`. Using `+8` produces wrong filenames silently. |
-| Writing `pce_thumbs.bin` manually | Don't. Both Pocket and Duo firmware rebuild it from the individual `.bin` files on boot. Writing it manually either has no effect or corrupts the cache. |
+| Writing `pce_thumbs.bin` manually | Don't hand-edit or assume the firmware will rebuild it on boot. `pce_thumbs.bin` must be generated externally (via `generate_pce_thumbs_bin()`) from the individual `.bin` files; stale or incorrect contents can cause missing or broken images. |
 | Pocket format written to Duo | Without pre-rotation the header says `(h, w)` but stored data is `(w, h)`. Firmware renders as thin horizontal stripes. |
 | Landscape output (no pre-rotation) | Pocket firmware rejects landscape `.bin` files and shows `Image: —` in Game Detail view. |
 | Wrong output directory name | Directory must be `platform_id` (e.g. `pce`), not the display name (`PC Engine`). Case-insensitive on FAT32 but use lowercase. |
