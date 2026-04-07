@@ -7,19 +7,21 @@ Tests:
   - should_skip_image(): Skip logic for physical carts vs ROMs
 """
 
-import sys
+import importlib.util
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from analogue_image_gen import (
-    _sanitize_filename,
-    detect_device,
+_MODULE_PATH = Path(__file__).parent.parent / "analogue_image_gen.py"
+_MODULE_SPEC = importlib.util.spec_from_file_location(
+    "analogue_image_gen", _MODULE_PATH
 )
+_MODULE = importlib.util.module_from_spec(_MODULE_SPEC)
+assert _MODULE_SPEC is not None and _MODULE_SPEC.loader is not None
+_MODULE_SPEC.loader.exec_module(_MODULE)
 
-
+_sanitize_filename = _MODULE._sanitize_filename
+detect_device = _MODULE.detect_device
 class TestSanitizeFilename:
     """Tests for _sanitize_filename() function."""
 

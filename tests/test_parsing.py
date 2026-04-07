@@ -10,12 +10,6 @@ Tests:
 """
 
 import pytest
-import sys
-from pathlib import Path
-
-# Add repo root to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from analogue_image_gen import (
     parse_dat_file,
     build_dat_lookup,
@@ -74,12 +68,13 @@ class TestBuildDatLookup:
     def test_build_lookup_from_entries(self, sample_dat_entries):
         """Build a lookup table from DAT entries."""
         # The entries from the fixture have "crc32" key, but build_dat_lookup expects "crc"
-        entries = [{"name": e["name"], "crc": e["crc32"]} for e in sample_dat_entries]
+        # Uppercase CRCs here to match parse_dat_file() and real pipeline usage.
+        entries = [{"name": e["name"], "crc": e["crc32"].upper()} for e in sample_dat_entries]
         lookup = build_dat_lookup(entries)
         
         assert "Adventure Island" in lookup
-        assert lookup["Adventure Island"] == "a1b2c3d4"
-        assert lookup["Bonk's Adventure"] == "d4c3b2a1"
+        assert lookup["Adventure Island"] == "A1B2C3D4"
+        assert lookup["Bonk's Adventure"] == "D4C3B2A1"
 
     def test_build_lookup_applies_libretro_substitution(self):
         """Lookup keys should have libretro substitution applied."""

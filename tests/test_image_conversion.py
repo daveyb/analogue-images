@@ -8,14 +8,9 @@ Tests:
 """
 
 import struct
-import sys
-from pathlib import Path
 
 import pytest
 from PIL import Image
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from analogue_image_gen import (
     POCKET_BIN_MAGIC,
     POCKET_BIN_TARGET_HEIGHT,

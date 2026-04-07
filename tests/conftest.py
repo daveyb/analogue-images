@@ -8,7 +8,6 @@ Provides:
 """
 
 import json
-import struct
 import tempfile
 from pathlib import Path
 
@@ -105,11 +104,13 @@ def sample_dat_file(tmp_dir, sample_dat_entries):
 def sample_special_cases():
     """Return sample special_cases.json data."""
     return {
-        "redirects": {
-            "Bonk's Adventure (Japanese Title)": "Bonk's Adventure",
-            "Military Madness (Alt)": "Military Madness",
-        },
-        "skip_patterns": ["Virtual Console", "[Hack]", "[Homebrew]"],
+        "console": {
+            "redirect": {
+                "Bonk's Adventure (Japanese Title)": "Bonk's Adventure",
+                "Military Madness (Alt)": "Military Madness",
+            },
+            "skip": ["Virtual Console", "[Hack]", "[Homebrew]"],
+        }
     }
 
 

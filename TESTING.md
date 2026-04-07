@@ -101,5 +101,5 @@ The workflow `.github/workflows/test.yml` tests against Python 3.9, 3.10, 3.11, 
 
 To make tests required before merge:
 1. Settings → Rules → Rulesets
-2. Add required status check: `test (all)`
+2. Add the required status checks exactly as GitHub shows them for the test matrix jobs (for example: `Tests / test (3.9)`, `Tests / test (3.10)`, `Tests / test (3.11)`, and `Tests / test (3.12)`)
 3. Save
