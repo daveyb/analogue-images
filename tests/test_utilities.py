@@ -107,14 +107,13 @@ class TestDetectDevice:
         device = detect_device(tmp_dir)
         assert device is None
 
-    def test_detect_pocket_priority_over_duo(self, tmp_dir):
-        """Pocket has priority when both files exist."""
+    def test_detect_duo_priority_over_pocket(self, tmp_dir):
+        """Duo has priority when both files exist."""
         (tmp_dir / "Analogue_Pocket.json").write_text("{}")
         (tmp_dir / "Analogue_Duo.json").write_text("{}")
-        
+
         device = detect_device(tmp_dir)
-        # The function should detect one; exact behavior depends on implementation
-        assert device in ("pocket", "duo")
+        assert device == "duo"
 
     def test_detect_device_nonexistent_root(self):
         """Return None for nonexistent root path."""
