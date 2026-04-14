@@ -7,13 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-04-14
+
 ### Added
 
 - Game Gear (`gg`) support on Analogue Pocket: downloads box art from the
   `Sega_-_Game_Gear` libretro-thumbnails repository and writes per-game `.bin`
-  images to `System/Library/Images/gg/`. Validated on hardware with physical
-  cartridges (Ax Battler, Shining Force II). Pocket system ID `0x03` confirmed
-  as Game Gear (previously labelled as an unverified GBC placeholder).
+  images to `System/Library/Images/gg/`. Hardware-confirmed on Pocket firmware
+  2.5 with physical cartridges (Ax Battler, Shining Force II).
+
+### Fixed
+
+- Corrected Pocket system ID mapping: `0x03` is Game Gear (previously labelled
+  as an unverified GBC placeholder). `0x04` is now the GBC placeholder.
+- Added `special_cases.json` redirect for Game Gear: libretro-thumbnails omits
+  "II" from *Shining Force II: The Sword of Hajya* — redirect ensures the
+  correct image is matched and written.
 
 ## [0.4.3] - 2026-04-07
 
