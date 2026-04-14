@@ -124,6 +124,11 @@ class TestDetectDatConsole:
         console = detect_dat_console("Nintendo - Game Boy Advance")
         assert console == "gba"
 
+    def test_detect_gg_from_system_name(self):
+        """Detect Game Gear from system name."""
+        console = detect_dat_console("Sega - Game Gear")
+        assert console == "gg"
+
     def test_detect_ngp_from_system_name(self):
         """Detect Neo Geo Pocket from system name."""
         console = detect_dat_console("SNK - Neo Geo Pocket Color")

@@ -22,6 +22,7 @@ Inspired by and borrowed from [codewario](https://github.com/codewario/PocketLib
 | PC Engine CD / TurboGrafx-CD | `pcecd` | — | ✅ confirmed |
 | Game Boy Advance | `gba` | ✅ confirmed | — |
 | Neo Geo Pocket Color | `ngp` | ✅ confirmed | — |
+| Game Gear | `gg` | ✅ confirmed | — |
 
 ---
 

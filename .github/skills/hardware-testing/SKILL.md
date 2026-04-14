@@ -12,6 +12,18 @@ Tracks hardware test procedures, confirmed results, and open questions for the A
 
 ## Confirmed Results
 
+### GG (Game Gear) on Analogue Pocket — ✅ FULLY CONFIRMED 2026-04-14
+
+- **Library path:** `System/Library/Images/gg/`
+- **Image filename:** CRC32 from `list.bin` offset `+4` (lowercase hex) — same mechanism as PCE/GBA
+- **Format:** Same as all Pocket formats — 90°CCW pre-rotated, 165px target height (post-rotation), BGRA32
+- **gg_thumbs.bin:** Firmware-managed cache, rebuilt from `.bin` files in `gg/` on boot. Do NOT write it manually.
+- **System ID:** `0x03` in Pocket `list.bin` flags (upper byte) — verified with physical cartridges
+- **Confirmed on hardware:** Box art displays correctly in Library on Pocket firmware 2.5 with physical cartridges:
+  - Ax Battler: A Legend of Golden Axe (`663bcf8a.bin`)
+  - Shining Force II: The Sword of Hajya (`a6ca6fa9.bin`)
+- **Note:** libretro-thumbnails drops "II" from "Shining Force II: The Sword of Hajya" → matched via `special_cases.json` redirect
+
 ### PCE (PC Engine / TurboGrafx-16) — ✅ FULLY CONFIRMED 2026-04-02
 
 - **Library path:** `System/Library/Images/pce/` (= `platform_ids: ["pce"]` from `agg23.PC Engine/core.json`)

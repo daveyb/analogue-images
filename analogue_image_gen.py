@@ -54,6 +54,7 @@ VERSION = "0.4.3"
 
 # libretro-thumbnails repository info
 CONSOLE_REPOS = {
+    "gg": "Sega_-_Game_Gear",
     "gba": "Nintendo_-_Game_Boy_Advance",
     "ngp": "SNK_-_Neo_Geo_Pocket_Color",
     "pce": "NEC_-_PC_Engine_-_TurboGrafx_16",
@@ -102,10 +103,11 @@ DEVICE_FILES = {
 # Used by both Pocket and Duo devices; entries are keyed by platform_id per the
 # Analogue developer docs: https://www.analogue.co/developer/docs/library
 # Device-specific notes:
-#   gba, ngp  — Pocket only (the Duo does not have cartridge slots for these)
-#   pce       — Both Pocket (HuCard) and Duo (HuCard)
-#   pcecd     — Duo only (the Pocket has no CD unit)
+#   gg, gba, ngp  — Pocket only (the Duo does not have cartridge slots for these)
+#   pce           — Both Pocket (HuCard) and Duo (HuCard)
+#   pcecd         — Duo only (the Pocket has no CD unit)
 CONSOLE_IMAGE_DIRS = {
+    "gg": Path("System") / "Library" / "Images" / "gg",
     "gba": Path("System") / "Library" / "Images" / "gba",
     "ngp": Path("System") / "Library" / "Images" / "ngp",
     "pce": Path("System") / "Library" / "Images" / "pce",
@@ -122,6 +124,7 @@ DUO_THUMBS_FILES = {
 # Used to distinguish physical cartridge games (no file on SD card) from
 # ROM/downloaded games (file present in Assets/<console>/common/).
 CONSOLE_ROM_PATHS: dict[str, tuple[Path, frozenset[str]]] = {
+    "gg": (Path("Assets") / "gg" / "common", frozenset({".gg"})),
     "gba": (Path("Assets") / "gba" / "common", frozenset({".gba", ".agb"})),
     "ngp": (Path("Assets") / "ngp" / "common", frozenset({".ngp", ".ngc"})),
     "pce": (Path("Assets") / "pce" / "common", frozenset({".pce", ".sgx"})),
@@ -135,8 +138,8 @@ CONSOLE_ROM_PATHS: dict[str, tuple[Path, frozenset[str]]] = {
 POCKET_SYSTEM_IDS = {
     0x01: "gb",  # Game Boy (unverified — placeholder)
     0x02: "gba",  # Game Boy Advance (verified: Advance Wars 2, FE: Sacred Stones)
-    0x03: "gbc",  # Game Boy Color (unverified — placeholder)
-    0x04: "gg",  # Game Gear (unverified — placeholder)
+    0x03: "gg",  # Game Gear (verified: Ax Battler, Shining Force II)
+    0x04: "gbc",  # Game Boy Color (unverified — placeholder)
     0x06: "ngp",  # Neo Geo Pocket / Color (verified: Dark Arms, Dive Alert, etc.)
     0x07: "pce",  # PC Engine / TurboGrafx-16 (verified: Ninja Spirit, Military Madness, etc.)
 }
@@ -179,6 +182,7 @@ VALID_MODES = {"download-only", "convert-only", "list-games", "clear-images"}
 # DAT file console identification patterns
 # Order matters: check pcecd before pce to avoid partial match on "PC Engine CD"
 DAT_CONSOLE_PATTERNS = [
+    ("gg", re.compile(r"Game\s*Gear", re.IGNORECASE)),
     ("gba", re.compile(r"Game\s*Boy\s*Advance", re.IGNORECASE)),
     ("ngp", re.compile(r"Neo\s*Geo\s*Pocket", re.IGNORECASE)),
     ("pcecd", re.compile(r"PC\s*Engine\s*CD|TurboGrafx[- ]CD", re.IGNORECASE)),
@@ -2231,9 +2235,9 @@ def cmd_clear_images(args: argparse.Namespace) -> int:
     if device == "pocket" and "pcecd" in consoles:
         consoles = [c for c in consoles if c != "pcecd"]
 
-    # Duo does not support GBA/NGP — skip those silently.
+    # Duo does not support GG/GBA/NGP — skip those silently.
     if device == "duo":
-        consoles = [c for c in consoles if c not in ("gba", "ngp")]
+        consoles = [c for c in consoles if c not in ("gg", "gba", "ngp")]
 
     prefix = "DRY-RUN  " if dry_run else ""
     total_removed = 0
@@ -2314,14 +2318,14 @@ def cmd_clear_images(args: argparse.Namespace) -> int:
 def _resolve_consoles(console_arg: str) -> list[str]:
     """Turn the ``--console`` argument into a list of console keys.
 
-    ``"all"`` expands to all supported consoles: pce, pcecd, gba, and ngp.
+    ``"all"`` expands to all supported consoles: gg, gba, ngp, pce, and pcecd.
     """
     if console_arg == "all":
-        return ["gba", "ngp", "pce", "pcecd"]
+        return ["gg", "gba", "ngp", "pce", "pcecd"]
     if console_arg in CONSOLE_REPOS:
         return [console_arg]
     logger.error(
-        "Unknown console: %s (expected: gba, ngp, pce, pcecd, all)", console_arg
+        "Unknown console: %s (expected: gg, gba, ngp, pce, pcecd, all)", console_arg
     )
     sys.exit(1)
 
@@ -2352,9 +2356,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=TOOL_NAME,
         description=(
-            "Download and convert thumbnail images for PC Engine, PC Engine CD, "
-            "Game Boy Advance, and Neo Geo Pocket Color — for Analogue Duo and "
-            "Analogue Pocket."
+            "Download and convert thumbnail images for Game Gear, Game Boy Advance, "
+            "Neo Geo Pocket Color, PC Engine, and PC Engine CD — for Analogue Pocket "
+            "and Analogue Duo."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -2374,6 +2378,8 @@ def build_parser() -> argparse.ArgumentParser:
             "# Use in-game snapshots\n"
             "  %(prog)s E:\\ --console pce                 "
             "# Only PC Engine (skip others)\n"
+            "  %(prog)s E:\\ --console gg                  "
+            "# Only Game Gear\n"
             "  %(prog)s E:\\ --console gba                 "
             "# Only Game Boy Advance\n"
             "  %(prog)s E:\\ --console ngp                 "
@@ -2423,11 +2429,11 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--console",
-        choices=["gba", "ngp", "pce", "pcecd", "all"],
+        choices=["gg", "gba", "ngp", "pce", "pcecd", "all"],
         default="all",
         help=(
             "Which console(s) to process (default: all). "
-            "'all' processes gba, ngp, pce, and pcecd."
+            "'all' processes gg, gba, ngp, pce, and pcecd."
         ),
     )
     parser.add_argument(
