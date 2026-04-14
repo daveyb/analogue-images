@@ -11,12 +11,14 @@ MAGIC = b"\x01FAT"
 
 SYSTEM_NAMES = {
     0x02: "GBA",
+    0x03: "GG",
     0x06: "NGP",
     0x07: "PCE",
 }
 
 CONSOLE_KEYS = {
     0x02: "gba",
+    0x03: "gg",
     0x06: "ngp",
     0x07: "pce",
 }

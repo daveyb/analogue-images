@@ -1,4 +1,10 @@
 {
+  "gg": {
+    "skip": [],
+    "redirect": {
+      "Shining Force - The Sword of Hajya (USA)": "Shining Force II: The Sword of Hajya"
+    }
+  },
   "gba": {
     "skip": [],
     "redirect": {}

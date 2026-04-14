@@ -64,7 +64,7 @@ The script is **idempotent** — running it twice produces the same result. Alre
 | Argument | Default | Description |
 |---|---|---|
 | `sd_card` (positional) | — | Path to the Analogue SD card root (required for auto/convert-only) |
-| `--console` | `all` | Console(s): `pce`, `pcecd`, `gba`, `ngp`, or `all` |
+| `--console` | `all` | Console(s): `gg`, `pce`, `pcecd`, `gba`, `ngp`, or `all` |
 | `--image-type` | `boxart` | Image type: `boxart`, `title`, or `snap` |
 | `--device` | auto-detect | Force device type: `pocket` or `duo` |
 | `--dat-file` | none | Path to No-Intro DAT file for CRC32 name matching |
