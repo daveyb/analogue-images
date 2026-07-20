@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated dependency minimum versions in `requirements.txt` (`Pillow>=10.1.0`, `requests>=2.31.0`, `pytest>=8.0.0`, `pytest-cov>=5.0.0`, `pytest-mock>=3.12.0`).
+
+### Fixed
+
+- Fixed `configure_logging()` in `analogue_image_gen.py` to clear existing handlers before adding a new handler, preventing duplicate log output on multiple calls.
+
+### Added
+
+- Added unit tests for `configure_logging()` handler management in `tests/test_utilities.py`.
+
 [Unreleased]: https://github.com/<owner>/analogue-images/compare/v0.4.4...HEAD
 [0.4.4]: https://github.com/<owner>/analogue-images/compare/v0.4.3...v0.4.4
 ## [0.4.4] - 2026-04-14
