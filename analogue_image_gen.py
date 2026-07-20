@@ -208,6 +208,7 @@ def configure_logging(verbosity: int) -> None:
     else:
         level = logging.WARNING
 
+    logger.handlers.clear()
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(
         logging.Formatter(
@@ -217,6 +218,7 @@ def configure_logging(verbosity: int) -> None:
     )
     logger.setLevel(level)
     logger.addHandler(handler)
+
 
 
 # ---------------------------------------------------------------------------
