@@ -162,3 +162,22 @@ class TestUtilityIntegration:
         assert isinstance(result, str)
         # CRC and .bin should remain
         assert "bin" in result.lower() or result.startswith(crc)
+
+
+class TestConfigureLogging:
+    """Tests for configure_logging() function."""
+
+    def test_configure_logging_handler_cleanup(self):
+        """Ensure configure_logging clears old handlers and sets correct levels."""
+        analogue_image_gen.configure_logging(0)
+        assert len(analogue_image_gen.logger.handlers) == 1
+        assert analogue_image_gen.logger.level == analogue_image_gen.logging.WARNING
+
+        analogue_image_gen.configure_logging(1)
+        assert len(analogue_image_gen.logger.handlers) == 1
+        assert analogue_image_gen.logger.level == analogue_image_gen.logging.INFO
+
+        analogue_image_gen.configure_logging(2)
+        assert len(analogue_image_gen.logger.handlers) == 1
+        assert analogue_image_gen.logger.level == analogue_image_gen.logging.DEBUG
+
