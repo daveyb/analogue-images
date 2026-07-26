@@ -260,9 +260,12 @@ class TestLoadSpecialCases:
         invalid = tmp_dir / "invalid.json"
         invalid.write_text("{invalid json")
         
-        # Invalid JSON raises an exception in load_special_cases
-        with pytest.raises(Exception):
-            load_special_cases(invalid)
+        # Invalid JSON returns default structure gracefully
+        cases = load_special_cases(invalid)
+        assert "pce" in cases
+        assert "pcecd" in cases
+        assert cases["pce"]["skip"] == []
+        assert cases["pce"]["redirect"] == {}
 
     def test_load_empty_json_file(self, tmp_dir):
         """Handle empty JSON object."""

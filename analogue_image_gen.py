@@ -322,10 +322,21 @@ def load_special_cases(path: Optional[Path] = None) -> dict:
             "pce": {"skip": [], "redirect": {}},
             "pcecd": {"skip": [], "redirect": {}},
         }
-    with open(path, "r", encoding="utf-8") as fh:
-        data = json.load(fh)
-    logger.debug("Loaded special cases from %s", path)
-    return data
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        logger.debug("Loaded special cases from %s", path)
+        return data
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning(
+            "Failed to parse special_cases.json at %s: %s — using empty defaults",
+            path,
+            exc,
+        )
+        return {
+            "pce": {"skip": [], "redirect": {}},
+            "pcecd": {"skip": [], "redirect": {}},
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +379,80 @@ def detect_device(sd_root: Path) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
+def _parse_played_games(sd_root: Path, device: str) -> list[dict]:
+    """Internal helper to parse ``System/Played Games/list.bin`` for Pocket or Duo.
+
+    Returns a list of game record dicts.
+    """
+    list_bin = sd_root / "System" / "Played Games" / "list.bin"
+    device_name = "Pocket" if device == "pocket" else "Duo"
+    if not list_bin.is_file():
+        logger.warning("%s played-games DB not found: %s", device_name, list_bin)
+        return []
+
+    try:
+        with open(list_bin, "rb") as fh:
+            data = fh.read()
+
+        magic = data[0:4]
+        if magic != b"\x01FAT":
+            logger.warning(
+                "Unexpected magic in list.bin: %s (expected 01464154)",
+                magic.hex(),
+            )
+
+        entry_count = struct.unpack_from("<I", data, 4)[0]
+        offsets = [
+            struct.unpack_from("<I", data, 16 + i * 4)[0] for i in range(entry_count)
+        ]
+
+        games: list[dict] = []
+        for off in offsets:
+            entry_size = struct.unpack_from("<H", data, off)[0]
+            flags = struct.unpack_from("<H", data, off + 2)[0]
+            crc32 = struct.unpack_from("<I", data, off + 4)[0]
+            game_id = struct.unpack_from("<I", data, off + 12)[0]
+            name_bytes = data[off + 16 : off + entry_size]
+            name = name_bytes.split(b"\x00")[0].decode("utf-8", errors="replace")
+
+            if device == "pocket":
+                system_id = flags >> 8
+                console_key = POCKET_SYSTEM_IDS.get(system_id)
+                games.append(
+                    {
+                        "name": name,
+                        "crc": f"{crc32:08x}",
+                        "flags": flags,
+                        "system_id": system_id,
+                        "game_id": game_id,
+                        "console_key": console_key,
+                    }
+                )
+            else:
+                console_key = DUO_CONSOLE_FLAGS.get(flags)
+                games.append(
+                    {
+                        "name": name,
+                        "crc": f"{crc32:08x}",
+                        "flags": flags,
+                        "game_id": game_id,
+                        "console_key": console_key,
+                    }
+                )
+
+        logger.info(
+            "Parsed %d games from %s played-games DB (%s)",
+            len(games),
+            device_name,
+            list_bin,
+        )
+        return games
+
+    except (OSError, struct.error) as exc:
+        logger.warning("Failed to parse %s played-games DB: %s", device_name, exc)
+        return []
+
+
 def parse_pocket_played_games(sd_root: Path) -> list[dict]:
     """Parse ``System/Played Games/list.bin`` from the Pocket SD card.
 
@@ -382,67 +467,7 @@ def parse_pocket_played_games(sd_root: Path) -> list[dict]:
 
     Returns an empty list if the file is missing or cannot be parsed.
     """
-    list_bin = sd_root / "System" / "Played Games" / "list.bin"
-    if not list_bin.is_file():
-        logger.warning("Pocket played-games DB not found: %s", list_bin)
-        return []
-
-    try:
-        with open(list_bin, "rb") as fh:
-            data = fh.read()
-
-        # Validate magic bytes (same format as Analogue Duo)
-        magic = data[0:4]
-        if magic != b"\x01FAT":
-            logger.warning(
-                "Unexpected magic in list.bin: %s (expected 01464154)",
-                magic.hex(),
-            )
-
-        entry_count = struct.unpack_from("<I", data, 4)[0]
-        # Offset table starts at byte 16 (after 4-byte magic, 4-byte entry
-        # count, 4-byte unknown field, 4-byte first-entry offset).
-        offsets = [
-            struct.unpack_from("<I", data, 16 + i * 4)[0] for i in range(entry_count)
-        ]
-
-        games: list[dict] = []
-        for off in offsets:
-            entry_size = struct.unpack_from("<H", data, off)[0]
-            flags = struct.unpack_from("<H", data, off + 2)[0]
-            # offset +4: CRC32 of the ROM/asset file — this is what the firmware
-            # uses for Library image filename lookup (matches field4, not field8).
-            # offset +8: a secondary identifier (role TBD; was incorrectly used
-            # as the image-lookup CRC in earlier versions of this tool).
-            crc32 = struct.unpack_from("<I", data, off + 4)[0]
-            game_id = struct.unpack_from("<I", data, off + 12)[0]
-            name_bytes = data[off + 16 : off + entry_size]
-            name = name_bytes.split(b"\x00")[0].decode("utf-8", errors="replace")
-
-            system_id = flags >> 8
-            console_key = POCKET_SYSTEM_IDS.get(system_id)
-
-            games.append(
-                {
-                    "name": name,
-                    "crc": f"{crc32:08x}",
-                    "flags": flags,
-                    "system_id": system_id,
-                    "game_id": game_id,
-                    "console_key": console_key,
-                }
-            )
-
-        logger.info(
-            "Parsed %d games from Pocket played-games DB (%s)",
-            len(games),
-            list_bin,
-        )
-        return games
-
-    except (OSError, struct.error) as exc:
-        logger.warning("Failed to parse Pocket played-games DB: %s", exc)
-        return []
+    return _parse_played_games(sd_root, "pocket")
 
 
 def build_pocket_db_lookup(sd_root: Path, console_key: str) -> dict[str, str]:
@@ -495,59 +520,7 @@ def parse_duo_played_games(sd_root: Path) -> list[dict]:
 
     Returns an empty list if the file is missing or cannot be parsed.
     """
-    list_bin = sd_root / "System" / "Played Games" / "list.bin"
-    if not list_bin.is_file():
-        logger.warning("Duo played-games DB not found: %s", list_bin)
-        return []
-
-    try:
-        with open(list_bin, "rb") as fh:
-            data = fh.read()
-
-        magic = data[0:4]
-        if magic != b"\x01FAT":
-            logger.warning(
-                "Unexpected magic in list.bin: %s (expected 01464154)",
-                magic.hex(),
-            )
-
-        entry_count = struct.unpack_from("<I", data, 4)[0]
-        offsets = [
-            struct.unpack_from("<I", data, 16 + i * 4)[0] for i in range(entry_count)
-        ]
-
-        games: list[dict] = []
-        for off in offsets:
-            entry_size = struct.unpack_from("<H", data, off)[0]
-            flags = struct.unpack_from("<H", data, off + 2)[0]
-            crc32 = struct.unpack_from("<I", data, off + 4)[0]
-            game_id = struct.unpack_from("<I", data, off + 12)[0]
-            name_bytes = data[off + 16 : off + entry_size]
-            name = name_bytes.split(b"\x00")[0].decode("utf-8", errors="replace")
-
-            # Duo: map full flags value to console key
-            console_key = DUO_CONSOLE_FLAGS.get(flags)
-
-            games.append(
-                {
-                    "name": name,
-                    "crc": f"{crc32:08x}",
-                    "flags": flags,
-                    "game_id": game_id,
-                    "console_key": console_key,
-                }
-            )
-
-        logger.info(
-            "Parsed %d games from Duo played-games DB (%s)",
-            len(games),
-            list_bin,
-        )
-        return games
-
-    except (OSError, struct.error) as exc:
-        logger.warning("Failed to parse Duo played-games DB: %s", exc)
-        return []
+    return _parse_played_games(sd_root, "duo")
 
 
 def build_duo_db_lookup(sd_root: Path, console_key: str) -> dict[str, str]:
@@ -1349,41 +1322,50 @@ def convert_image_to_pocket_bin(
         return False
 
     try:
-        img = Image.open(source_path)
-        img = img.convert("RGBA")
+        with Image.open(source_path) as img:
+            img = img.convert("RGBA")
 
-        if rotate:
-            # Pocket: pre-rotate 90° CCW so the firmware's 90° CW render
-            # produces a correct upright image.
-            # PIL rotate(90) is counter-clockwise with expand=True.
-            img = img.rotate(90, expand=True)
-
-        # Scale proportionally so height = 165 px
-        orig_w, orig_h = img.size
-        if orig_h == 0:
-            logger.warning("Image has zero height, skipping: %s", source_path)
-            return False
-        scale = POCKET_BIN_TARGET_HEIGHT / orig_h
-        new_w = max(1, int(orig_w * scale))
-        new_h = POCKET_BIN_TARGET_HEIGHT
-        img = img.resize((new_w, new_h), Image.LANCZOS)
-
-        # Convert to BGRA32 pixel data
-        pixel_data = img.tobytes("raw", "BGRA")
-
-        # Write .bin file
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(dest_path, "wb") as fh:
-            fh.write(POCKET_BIN_MAGIC)
             if rotate:
-                # Pocket: header encodes display dimensions (post-firmware-rotation).
-                # display_w = stored_h (new_h), display_h = stored_w (new_w).
-                fh.write(struct.pack("<HH", new_h, new_w))
-            else:
-                # Duo: header encodes actual stored dimensions so firmware reads
-                # the correct row stride without any rotation.
-                fh.write(struct.pack("<HH", new_w, new_h))
-            fh.write(bytes(pixel_data))
+                # Pocket: pre-rotate 90° CCW so the firmware's 90° CW render
+                # produces a correct upright image.
+                # PIL rotate(90) is counter-clockwise with expand=True.
+                img = img.rotate(90, expand=True)
+
+            # Scale proportionally so height = 165 px
+            orig_w, orig_h = img.size
+            if orig_h == 0:
+                logger.warning("Image has zero height, skipping: %s", source_path)
+                return False
+            scale = POCKET_BIN_TARGET_HEIGHT / orig_h
+            new_w = max(1, int(orig_w * scale))
+            new_h = POCKET_BIN_TARGET_HEIGHT
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+
+            # Convert to BGRA32 pixel data
+            pixel_data = img.tobytes("raw", "BGRA")
+
+        # Write .bin file atomically using temp file in destination directory
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(dest_path.parent), suffix=".tmp")
+        try:
+            with os.fdopen(tmp_fd, "wb") as fh:
+                fh.write(POCKET_BIN_MAGIC)
+                if rotate:
+                    # Pocket: header encodes display dimensions (post-firmware-rotation).
+                    # display_w = stored_h (new_h), display_h = stored_w (new_w).
+                    fh.write(struct.pack("<HH", new_h, new_w))
+                else:
+                    # Duo: header encodes actual stored dimensions so firmware reads
+                    # the correct row stride without any rotation.
+                    fh.write(struct.pack("<HH", new_w, new_h))
+                fh.write(bytes(pixel_data))
+            Path(tmp_path).replace(dest_path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
         logger.debug(
             "Converted %s → %s (%dx%d)", source_path.name, dest_path.name, new_w, new_h
@@ -1458,7 +1440,17 @@ def write_duo_thumbs_bin(entries: list[tuple[int, bytes]], output_path: Path) ->
     raw = _pack_thumbs_bin(entries)
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(raw)
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(output_path.parent), suffix=".tmp")
+        try:
+            with os.fdopen(tmp_fd, "wb") as fh:
+                fh.write(raw)
+            Path(tmp_path).replace(output_path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
     except OSError as exc:
         logger.error("write_duo_thumbs_bin: failed to write %s: %s", output_path, exc)
         return False
@@ -1837,24 +1829,28 @@ def cmd_auto(args: argparse.Namespace) -> int:
             return 1
 
     # Load DAT files for CRC32-based Pocket filenames
+def _prepare_lookups_and_filters(
+    args: argparse.Namespace,
+    device: str,
+    sd_root: Path,
+    consoles: list[str],
+) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
+    """Load DAT files, build played-games DB lookups, and apply physical-only cart filters.
+
+    Returns ``(dat_lookups, crc_to_db_names)``.
+    """
     dat_lookups: dict[str, dict[str, str]] = {}
     if args.dat_file:
         dat_lookups = load_dat_files(args.dat_file, consoles)
 
-    # --use-pocket-db: read CRCs directly from the Pocket's played-games DB.
-    # This fills in any console not already covered by a --dat-file, so both
-    # sources can be combined (DAT file takes precedence where both apply).
     use_pocket_db: bool = getattr(args, "use_pocket_db", True)
-    crc_to_db_names: dict[
-        str, dict[str, str]
-    ] = {}  # console_key → {crc: list.bin name}
+    crc_to_db_names: dict[str, dict[str, str]] = {}
+
     if use_pocket_db and device == "pocket":
         all_games = parse_pocket_played_games(sd_root)
-        # TUI: compact single-line DB summary, e.g. "Pocket DB  GBA:2  NGP:7  PCE:11"
         systems_desc = _describe_pocket_db_systems(all_games)
         print(f"\nPocket DB  {systems_desc}")
         for console_key in consoles:
-            # Build CRC → list.bin name reverse lookup for this console
             crc_to_db_names[console_key] = {
                 g["crc"]: g["name"]
                 for g in all_games
@@ -1904,12 +1900,6 @@ def cmd_auto(args: argparse.Namespace) -> int:
             "(CRCs from the Pocket's played-games DB; works for any region)"
         )
 
-    # --physical-only (default): filter every lookup so only physical
-    # cartridge games are included.  A game is considered a physical cart if
-    # it is in list.bin but has no corresponding ROM file in Assets/<console>/.
-    # The Duo is a cartridge-only device — the filter is always satisfied and
-    # does not need to run (get_physical_cart_crcs uses the Pocket parser which
-    # would misclassify Duo flags).
     physical_only: bool = getattr(args, "physical_only", True)
     if physical_only and dat_lookups and sd_root is not None and device != "duo":
         for console_key in list(dat_lookups.keys()):
@@ -1947,6 +1937,59 @@ def cmd_auto(args: argparse.Namespace) -> int:
                     after,
                     before - after,
                 )
+
+    return dat_lookups, crc_to_db_names
+
+
+def cmd_auto(args: argparse.Namespace) -> int:
+    """Default mode: download → convert → write to SD card."""
+    sd_root = Path(args.sd_card).resolve()
+    if not sd_root.is_dir():
+        logger.error("SD card root does not exist: %s", sd_root)
+        return 1
+
+    # Detect device
+    device = args.device or detect_device(sd_root)
+    if device is None:
+        logger.error(
+            "Could not auto-detect device type. "
+            "Neither %s nor %s found at %s.\n"
+            "Use --device duo or --device pocket to specify manually.",
+            DEVICE_FILES["duo"],
+            DEVICE_FILES["pocket"],
+            sd_root,
+        )
+        return 1
+
+    logger.info("Device: %s | Image type: %s", device, args.image_type)
+
+    cache_dir = Path(args.cache_dir).expanduser().resolve()
+    special_cases = load_special_cases()
+    consoles = _resolve_consoles(args.console)
+
+    # Pocket has no CD unit — drop pcecd before any DB lookups or downloads.
+    if device == "pocket" and "pcecd" in consoles:
+        print("\n▶ PCECD  skipped (not supported on Pocket — no CD unit)")
+        consoles = [c for c in consoles if c != "pcecd"]
+
+    # Phase 1: Download
+    _ensure_requests()
+    assert requests is not None  # guaranteed by _ensure_requests()
+    session = requests.Session()
+    session.headers["User-Agent"] = f"{TOOL_NAME}/{VERSION}"
+
+    for console_key in consoles:
+        ok = download_and_extract_repo(
+            console_key, cache_dir, session=session, force=args.force
+        )
+        if not ok:
+            logger.error("Download failed for %s — aborting", console_key)
+            return 1
+
+    dat_lookups, crc_to_db_names = _prepare_lookups_and_filters(
+        args, device, sd_root, consoles
+    )
+
     total_stats = {
         "total": 0,
         "skipped_filter": 0,
@@ -2035,106 +2078,9 @@ def cmd_convert_only(args: argparse.Namespace) -> int:
         print("\n▶ PCECD  skipped (not supported on Pocket — no CD unit)")
         consoles = [c for c in consoles if c != "pcecd"]
 
-    # Load DAT files for CRC32-based Pocket filenames
-    dat_lookups: dict[str, dict[str, str]] = {}
-    if args.dat_file:
-        dat_lookups = load_dat_files(args.dat_file, consoles)
-
-    # --use-pocket-db: read CRCs directly from the Pocket's played-games DB.
-    use_pocket_db: bool = getattr(args, "use_pocket_db", True)
-    crc_to_db_names: dict[
-        str, dict[str, str]
-    ] = {}  # console_key → {crc: list.bin name}
-    if use_pocket_db and device == "pocket":
-        all_games = parse_pocket_played_games(sd_root)
-        systems_desc = _describe_pocket_db_systems(all_games)
-        print(f"\nPocket DB  {systems_desc}")
-        for console_key in consoles:
-            # Build CRC → list.bin name reverse lookup for this console
-            crc_to_db_names[console_key] = {
-                g["crc"]: g["name"]
-                for g in all_games
-                if g["console_key"] == console_key
-            }
-            if console_key not in dat_lookups:
-                pocket_lookup = build_pocket_db_lookup(sd_root, console_key)
-                if pocket_lookup:
-                    dat_lookups[console_key] = pocket_lookup
-                else:
-                    logger.warning(
-                        "No played-%s games found in Pocket DB — "
-                        "ensure you have launched at least one %s game on "
-                        "your Pocket before running.",
-                        console_key.upper(),
-                        console_key.upper(),
-                    )
-    elif device == "duo":
-        all_duo_games = parse_duo_played_games(sd_root)
-        systems_desc = _describe_duo_db_systems(all_duo_games)
-        print(f"\nDuo DB  {systems_desc}")
-        for console_key in consoles:
-            crc_to_db_names[console_key] = {
-                g["crc"]: g["name"]
-                for g in all_duo_games
-                if g["console_key"] == console_key
-            }
-            if console_key not in dat_lookups:
-                duo_lookup = build_duo_db_lookup(sd_root, console_key)
-                if duo_lookup:
-                    dat_lookups[console_key] = duo_lookup
-                else:
-                    logger.warning(
-                        "No played-%s games found in Duo DB — "
-                        "ensure you have launched at least one %s game on "
-                        "your Duo before running.",
-                        console_key.upper(),
-                        console_key.upper(),
-                    )
-    elif device == "pocket" and not args.dat_file:
-        logger.warning(
-            "No CRC source provided for Pocket filenames. "
-            "Without one, output filenames will be game-name-based and will "
-            "NOT be recognised by the Pocket firmware.\n"
-            "  Option A: --dat-file <nointro.dat>  (No-Intro CRCs; best for USA ROMs)\n"
-            "  Option B: omit --no-pocket-db        "
-            "(CRCs from the Pocket's played-games DB; works for any region)"
-        )
-
-    # --physical-only (default): filter to physical cart CRCs only.
-    # Skipped for the Duo (always a cartridge-only device — no ROM assets).
-    physical_only: bool = getattr(args, "physical_only", True)
-    if physical_only and dat_lookups and sd_root is not None and device != "duo":
-        for console_key in list(dat_lookups.keys()):
-            cart_crcs = get_physical_cart_crcs(sd_root, console_key)
-            if cart_crcs is None:
-                logger.warning(
-                    "Cannot determine physical carts for %s — list.bin not found. "
-                    "Processing all %d games. Use --include-roms to suppress.",
-                    console_key.upper(),
-                    len(dat_lookups[console_key]),
-                )
-            elif not cart_crcs:
-                logger.warning(
-                    "No physical %s carts found in list.bin.",
-                    console_key.upper(),
-                )
-                dat_lookups[console_key] = {}
-            else:
-                before = len(dat_lookups[console_key])
-                dat_lookups[console_key] = {
-                    name: crc
-                    for name, crc in dat_lookups[console_key].items()
-                    if crc.lower() in cart_crcs
-                }
-                after = len(dat_lookups[console_key])
-                logger.info(
-                    "Physical-only filter for %s: %d → %d entries "
-                    "(%d ROM/downloaded games excluded)",
-                    console_key.upper(),
-                    before,
-                    after,
-                    before - after,
-                )
+    dat_lookups, crc_to_db_names = _prepare_lookups_and_filters(
+        args, device, sd_root, consoles
+    )
 
     total_stats = {
         "total": 0,
