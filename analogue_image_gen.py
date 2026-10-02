@@ -50,7 +50,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 TOOL_NAME = "analogue-image-gen"
-VERSION = "0.4.4"
+VERSION = "0.5.0"
 
 # libretro-thumbnails repository info
 CONSOLE_REPOS = {
@@ -80,18 +80,14 @@ DEFAULT_CACHE_DIR = Path.home() / ".analogue-image-gen" / "cache"
 POCKET_BIN_MAGIC = bytes([0x20, 0x49, 0x50, 0x41])  # " IPA"
 POCKET_BIN_TARGET_HEIGHT = 165
 
-# pce_thumbs.bin format constants (the bundle file the Pocket firmware reads
-# for PCE Library list-view thumbnails)
-PCE_THUMBS_MAGIC = bytes([0x02, 0x46, 0x54, 0x41])  # "\x02FTA" version 2
-PCE_THUMBS_HASH_SLOTS = 8192  # number of entries in the CRC hash table
-PCE_THUMBS_HASH_ENTRY_SIZE = 8  # bytes per hash table entry
-PCE_THUMBS_HEADER_SIZE = (
-    12 + PCE_THUMBS_HASH_SLOTS * PCE_THUMBS_HASH_ENTRY_SIZE
-)  # 65548
-# Thumbnail height for images embedded in pce_thumbs.bin.
-# Hardware testing confirmed that 165 px (= POCKET_BIN_TARGET_HEIGHT) displays
-# on the Pocket list view; the previously-tried 121 px did not show anything.
-PCE_THUMBS_THUMB_HEIGHT = 165
+POCKET_THUMBS_MAGIC = bytes([0x02, 0x46, 0x54, 0x41])  # "\x02FTA"
+POCKET_THUMBS_SLOTS = 8192
+POCKET_THUMBS_SLOT_SIZE = 8
+POCKET_THUMBS_TABLE_BYTES = POCKET_THUMBS_SLOTS * POCKET_THUMBS_SLOT_SIZE
+POCKET_THUMBS_IMAGE_OFFSET = 12 + POCKET_THUMBS_TABLE_BYTES
+POCKET_THUMB_STORED_WIDTH = 109
+POCKET_THUMB_STORED_HEIGHT = 121
+POCKET_THUMB_BYTES = 8 + POCKET_THUMB_STORED_WIDTH * POCKET_THUMB_STORED_HEIGHT * 4
 
 # Device identification files
 DEVICE_FILES = {
@@ -114,11 +110,12 @@ CONSOLE_IMAGE_DIRS = {
     "pcecd": Path("System") / "Library" / "Images" / "pcecd",
 }
 
-# Duo thumbs file paths per console
-DUO_THUMBS_FILES = {
-    "pce": Path("System") / "Library" / "Images" / "pce_thumbs.bin",
-    "pcecd": Path("System") / "Library" / "Images" / "pcecd_thumbs.bin",
-}
+DUO_CONSOLES = frozenset({"pce", "pcecd"})
+
+
+def pocket_thumbs_rel(console_key: str) -> Path:
+    return Path("System") / "Library" / "Images" / f"{console_key}_thumbs.bin"
+
 
 # ROM file locations and recognised extensions per console.
 # Used to distinguish physical cartridge games (no file on SD card) from
@@ -1395,162 +1392,176 @@ def convert_image_to_pocket_bin(
         return False
 
 
-def _pack_thumbs_bin(entries: list[tuple[int, bytes]]) -> bytes:
-    """Pack a list of ``(crc_int, bin_bytes)`` entries into the ``\\x02FTA`` bundle.
-
-    This is the pure serialisation core shared by ``generate_pce_thumbs_bin``
-    (reads from a directory) and ``write_duo_thumbs_bin`` (writes from an
-    in-memory list).
-
-    Format (all multi-byte integers are little-endian):
-      - Bytes   0–3:   magic ``\\x02FTA``
-      - Bytes   4–7:   total image-data section size (sum of all image entries)
-      - Bytes  8–11:   image count
-      - Bytes 12–65547: hash table (8192 × 8-byte entries)
-          Entry layout: [crc32 uint32][data-section-offset uint32]
-          Slot index = crc32_value % 8192 (linear-probe on collision)
-      - Bytes 65548+: image entries (`` IPA`` header + h/w + BGRA32 pixels)
-    """
-    # Sentinel: slot is empty when CRC field == 0 and offset field == 0.
-    # Valid CRC values are never 0, so this is safe.
-    hash_table = bytearray(PCE_THUMBS_HASH_SLOTS * PCE_THUMBS_HASH_ENTRY_SIZE)
-    image_data = bytearray()
-
-    for crc_val, bin_bytes in entries:
-        data_offset = len(image_data)
-        image_data.extend(bin_bytes)
-
-        slot = crc_val % PCE_THUMBS_HASH_SLOTS
-        for _ in range(PCE_THUMBS_HASH_SLOTS):
-            entry_off = slot * PCE_THUMBS_HASH_ENTRY_SIZE
-            existing_crc = struct.unpack_from("<I", hash_table, entry_off)[0]
-            if existing_crc == 0:
-                struct.pack_into("<II", hash_table, entry_off, crc_val, data_offset)
-                break
-            slot = (slot + 1) % PCE_THUMBS_HASH_SLOTS
-        else:
-            logger.error(
-                "_pack_thumbs_bin: hash table full — cannot insert CRC %08x", crc_val
-            )
-
-    return (
-        PCE_THUMBS_MAGIC
-        + struct.pack("<I", len(image_data))
-        + struct.pack("<I", len(entries))
-        + bytes(hash_table)
-        + bytes(image_data)
-    )
+CRC_FILENAME_RE = re.compile(r"^[0-9a-fA-F]{8}$")
 
 
-def write_duo_thumbs_bin(entries: list[tuple[int, bytes]], output_path: Path) -> bool:
-    """Write a ``pce_thumbs.bin`` / ``pcecd_thumbs.bin`` for the Analogue Duo.
-
-    *entries* is a list of ``(crc_int, bin_bytes)`` where *bin_bytes* is a
-    fully-formed Pocket ``.bin`` file (`` IPA`` header + BGRA32 pixels).
-
-    Returns ``True`` on success, ``False`` if *entries* is empty or a write
-    error occurs.
-    """
-    if not entries:
-        logger.warning("write_duo_thumbs_bin: no entries — skipping %s", output_path)
-        return False
-
-    raw = _pack_thumbs_bin(entries)
-    try:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(raw)
-    except OSError as exc:
-        logger.error("write_duo_thumbs_bin: failed to write %s: %s", output_path, exc)
-        return False
-
-    logger.info(
-        "Wrote %s with %d images (%d bytes total)",
-        output_path.name,
-        len(entries),
-        len(raw),
-    )
-    return True
-
-
-def generate_pce_thumbs_bin(source_dir: Path, output_path: Path) -> bool:
-    """Build ``pce_thumbs.bin`` from CRC-named ``.bin`` files in *source_dir*.
-
-    The Pocket firmware reads ``System/Library/Images/pce_thumbs.bin`` for the
-    PCE Library list-view thumbnails.  It does **not** build this file from the
-    source files in ``pce/`` at runtime; it must be generated externally.
-
-    See ``_pack_thumbs_bin`` for the full format specification.
-
-    Images are stored at ``PCE_THUMBS_THUMB_HEIGHT`` px height before embedding.
-    Hardware testing confirmed that 165 px (= POCKET_BIN_TARGET_HEIGHT) is
-    recognised by the firmware; 121 px was not displayed.
-
-    Only CRC-named files (8 hex chars, e.g. ``6aa69a8b.bin``) are included;
-    name-based files are ignored so each CRC appears exactly once.
-
-    Returns ``True`` on success, ``False`` if no valid images were found.
-    """
+def library_bin_to_thumb(bin_bytes: bytes) -> Optional[bytes]:
+    """Return one 109 by 121 grid image, center-cropped, same orientation as the source."""
     if Image is None:
-        logger.error("generate_pce_thumbs_bin: Pillow is required but not installed")
-        return False
-
-    CRC_RE = re.compile(r"^[0-9a-f]{8}$", re.IGNORECASE)
-
-    entries: list[tuple[int, bytes]] = []  # (crc_int, raw_bin_bytes)
-
-    for f in sorted(source_dir.glob("*.bin")):
-        if not CRC_RE.match(f.stem):
-            continue
-        data = f.read_bytes()
-        if len(data) < 8 or data[:4] != POCKET_BIN_MAGIC:
-            logger.debug("Skipping non-IPA file: %s", f.name)
-            continue
-        crc_val = int(f.stem, 16)
-
-        # Downscale to thumbnail size before embedding
-        orig_h, orig_w = struct.unpack_from("<HH", data, 4)
-        scale = PCE_THUMBS_THUMB_HEIGHT / orig_h
-        thumb_h = PCE_THUMBS_THUMB_HEIGHT
-        thumb_w = max(1, int(orig_w * scale))
-
-        # Reconstruct PIL image from raw BGRA32 pixels in the .bin file.
-        # Individual .bin files store images pre-rotated 90° CCW (so the
-        # firmware's 90° CW display rotation cancels it out).  Hardware testing
-        # showed that pce_thumbs.bin images appear upside-down when stored with
-        # the same 90° CCW pre-rotation, meaning the firmware applies an extra
-        # 90° CCW on top — producing 180° net.  To compensate we rotate 180°
-        # so that firmware-CCW + our-180° = 90° CW stored, and firmware applies
-        # 90° CCW → net 0° = correct upright display.
-        pixel_bytes = data[8:]
-        img = Image.frombytes(
-            "RGBA", (orig_w, orig_h), bytes(pixel_bytes), "raw", "BGRA"
-        )
-        img = img.rotate(180)  # correct for pce_thumbs.bin firmware rotation
-        img = img.resize((thumb_w, thumb_h), Image.LANCZOS)
-        thumb_pixels = img.tobytes("raw", "BGRA")
-        thumb_data = (
-            POCKET_BIN_MAGIC + struct.pack("<HH", thumb_h, thumb_w) + thumb_pixels
-        )
-
-        entries.append((crc_val, thumb_data))
-
-    if not entries:
-        logger.warning(
-            "generate_pce_thumbs_bin: no valid CRC .bin files in %s", source_dir
-        )
-        return False
-
-    raw = _pack_thumbs_bin(entries)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(raw)
-
-    logger.info(
-        "Wrote %s with %d images (%d bytes total)",
-        output_path.name,
-        len(entries),
-        len(raw),
+        logger.error("Pillow is required to build a library grid image")
+        return None
+    if len(bin_bytes) < 8 or bin_bytes[:4] != POCKET_BIN_MAGIC:
+        return None
+    stored_h, stored_w = struct.unpack_from("<HH", bin_bytes, 4)
+    if stored_w <= 0 or stored_h <= 0:
+        return None
+    if len(bin_bytes) < 8 + stored_w * stored_h * 4:
+        return None
+    img = Image.frombytes(
+        "RGBA", (stored_w, stored_h), bin_bytes[8:], "raw", "BGRA"
     )
-    return True
+    target_w = POCKET_THUMB_STORED_WIDTH
+    target_h = POCKET_THUMB_STORED_HEIGHT
+    scale = max(target_w / stored_w, target_h / stored_h)
+    resized_w = max(1, round(stored_w * scale))
+    resized_h = max(1, round(stored_h * scale))
+    img = img.resize((resized_w, resized_h), Image.LANCZOS)
+    left = (resized_w - target_w) // 2
+    top = (resized_h - target_h) // 2
+    img = img.crop((left, top, left + target_w, top + target_h))
+    pixels = img.tobytes("raw", "BGRA")
+    return POCKET_BIN_MAGIC + struct.pack("<HH", target_h, target_w) + pixels
+
+
+def parse_pocket_thumbs(data: bytes) -> Optional[list[tuple[int, bytes]]]:
+    """Read a grid bundle. Return None when the bytes are not this layout."""
+    header = 12 + POCKET_THUMBS_TABLE_BYTES
+    if len(data) < header or data[:4] != POCKET_THUMBS_MAGIC:
+        return None
+    per_image, count = struct.unpack_from("<II", data, 4)
+    if per_image != POCKET_THUMB_BYTES or count > POCKET_THUMBS_SLOTS:
+        return None
+    if len(data) < header + count * per_image:
+        return None
+    entries: list[tuple[int, bytes]] = []
+    for index in range(count):
+        crc, offset = struct.unpack_from(
+            "<II", data, 12 + index * POCKET_THUMBS_SLOT_SIZE
+        )
+        end = offset + per_image
+        if offset < header or end > len(data):
+            return None
+        blob = data[offset:end]
+        if blob[:4] != POCKET_BIN_MAGIC:
+            return None
+        entries.append((crc, blob))
+    return entries
+
+
+def pack_pocket_thumbs(entries: list[tuple[int, bytes]]) -> bytes:
+    if len(entries) > POCKET_THUMBS_SLOTS:
+        raise ValueError(
+            f"grid bundle holds {POCKET_THUMBS_SLOTS} games, got {len(entries)}"
+        )
+    table = bytearray(POCKET_THUMBS_TABLE_BYTES)
+    images = bytearray()
+    for index, (crc, blob) in enumerate(entries):
+        if len(blob) != POCKET_THUMB_BYTES:
+            raise ValueError(f"grid image for {crc:08x} is {len(blob)} bytes")
+        offset = POCKET_THUMBS_IMAGE_OFFSET + index * POCKET_THUMB_BYTES
+        struct.pack_into("<II", table, index * POCKET_THUMBS_SLOT_SIZE, crc, offset)
+        images.extend(blob)
+    return (
+        POCKET_THUMBS_MAGIC
+        + struct.pack("<II", POCKET_THUMB_BYTES, len(entries))
+        + bytes(table)
+        + bytes(images)
+    )
+
+
+def sync_pocket_thumbs(
+    image_dir: Path,
+    thumbs_path: Path,
+    *,
+    dry_run: bool = False,
+) -> dict:
+    """Make thumbs_path match the CRC-named .bin files in image_dir.
+
+    A CRC already stored in a valid bundle keeps its pixels. A new CRC file
+    gets a grid image. A CRC whose file is gone leaves the bundle. Running
+    this twice leaves the same bytes, and a matching file is not rewritten.
+    """
+    files: dict[int, Path] = {}
+    if image_dir.is_dir():
+        for path in image_dir.glob("*.bin"):
+            if CRC_FILENAME_RE.match(path.stem):
+                files[int(path.stem, 16)] = path
+
+    existing: list[tuple[int, bytes]] = []
+    if thumbs_path.is_file():
+        parsed = parse_pocket_thumbs(thumbs_path.read_bytes())
+        if parsed is not None:
+            existing = parsed
+
+    ordered: list[tuple[int, bytes]] = []
+    seen: set[int] = set()
+    added = 0
+    for crc, blob in existing:
+        path = files.get(crc)
+        if path is None or crc in seen:
+            continue
+        if len(blob) != POCKET_THUMB_BYTES or blob[:4] != POCKET_BIN_MAGIC:
+            built = library_bin_to_thumb(path.read_bytes())
+            if built is None:
+                continue
+            blob = built
+            added += 1
+        ordered.append((crc, blob))
+        seen.add(crc)
+
+    for crc in sorted(set(files) - seen):
+        built = library_bin_to_thumb(files[crc].read_bytes())
+        if built is None:
+            logger.warning(
+                "Skipping %s: not a Pocket library image", files[crc].name
+            )
+            continue
+        ordered.append((crc, built))
+        seen.add(crc)
+        added += 1
+
+    removed = sum(1 for crc, _blob in existing if crc not in files)
+    stats = {
+        "images": len(ordered),
+        "added": added,
+        "removed": removed,
+        "wrote": False,
+    }
+    prefix = "DRY-RUN  " if dry_run else ""
+    if not ordered:
+        if thumbs_path.is_file() and image_dir.is_dir() and not dry_run:
+            thumbs_path.unlink()
+            stats["wrote"] = True
+            print(f"  {prefix}grid  {thumbs_path.name}  removed (no CRC images)")
+        elif thumbs_path.is_file() and image_dir.is_dir():
+            print(
+                f"  {prefix}grid  {thumbs_path.name}  would remove (no CRC images)"
+            )
+        return stats
+
+    raw = pack_pocket_thumbs(ordered)
+    unchanged = thumbs_path.is_file() and thumbs_path.read_bytes() == raw
+    count_label = "1 image" if len(ordered) == 1 else f"{len(ordered)} images"
+    temporary = thumbs_path.with_suffix(".bin.tmp")
+    if unchanged:
+        if not dry_run and temporary.is_file():
+            temporary.unlink()
+        print(f"  {prefix}grid  {thumbs_path.name}  {count_label}, up to date")
+        return stats
+    if dry_run:
+        print(
+            f"  {prefix}grid  {thumbs_path.name}  would write {count_label} ({added} new)"
+        )
+        return stats
+
+    thumbs_path.parent.mkdir(parents=True, exist_ok=True)
+    if temporary.is_file():
+        temporary.unlink()
+    temporary.write_bytes(raw)
+    os.replace(temporary, thumbs_path)
+    stats["wrote"] = True
+    print(f"  grid  {thumbs_path.name}  {count_label} ({added} new)")
+    return stats
 
 
 def process_console(
@@ -1596,7 +1607,7 @@ def process_console(
 
     # Duo only supports pce and pcecd — skip unsupported consoles early so we
     # never fall through to the name-based filename fallback.
-    if device == "duo" and console_key not in DUO_THUMBS_FILES:
+    if device == "duo" and console_key not in DUO_CONSOLES:
         print(f"\n▶ {console_key.upper()}  skipped (not supported on Duo)")
         return stats
 
@@ -1617,8 +1628,6 @@ def process_console(
     print(f"\n▶ {console_key.upper()}{target_info}")
 
     # Determine output directory once (used for stale-file cleanup after the loop).
-    # Both Pocket and Duo write individual CRC-named .bin files to the same
-    # per-console directory; the Duo firmware then builds *_thumbs.bin from them.
     output_dir: Optional[Path] = None
     if sd_root is not None and device in ("pocket", "duo"):
         _img_dir = CONSOLE_IMAGE_DIRS.get(console_key)
@@ -1789,6 +1798,21 @@ def _sanitize_filename(name: str) -> str:
 # ---------------------------------------------------------------------------
 # Subcommand handlers
 # ---------------------------------------------------------------------------
+
+
+def _sync_pocket_grid(
+    sd_root: Path, device: str, console_key: str, dry_run: bool
+) -> None:
+    if device != "pocket" or console_key == "pcecd":
+        return
+    img_dir = CONSOLE_IMAGE_DIRS.get(console_key)
+    if img_dir is None:
+        return
+    sync_pocket_thumbs(
+        sd_root / img_dir,
+        sd_root / pocket_thumbs_rel(console_key),
+        dry_run=dry_run,
+    )
 
 
 def cmd_auto(args: argparse.Namespace) -> int:
@@ -1974,6 +1998,7 @@ def cmd_auto(args: argparse.Namespace) -> int:
         )
         for k in total_stats:
             total_stats[k] += stats.get(k, 0)
+        _sync_pocket_grid(sd_root, device, console_key, args.dry_run)
 
     if len(consoles) > 1:
         _print_stats(total_stats, args.dry_run)
@@ -2163,6 +2188,7 @@ def cmd_convert_only(args: argparse.Namespace) -> int:
         )
         for k in total_stats:
             total_stats[k] += stats.get(k, 0)
+        _sync_pocket_grid(sd_root, device, console_key, args.dry_run)
 
     if len(consoles) > 1:
         _print_stats(total_stats, args.dry_run)
@@ -2214,9 +2240,8 @@ def cmd_clear_images(args: argparse.Namespace) -> int:
     """Delete all converted .bin image files from the SD card.
 
     Removes every ``.bin`` file from each console's image directory on the SD
-    card. For Duo devices, also removes any matching ``*_thumbs.bin`` bundle
-    files. The played-games database (``System/Played Games/list.bin``) is
-    never touched.
+    card, and the matching ``<console>_thumbs.bin`` grid bundle. The
+    played-games database (``System/Played Games/list.bin``) is never touched.
     """
     sd_root = Path(args.sd_card).resolve()
     if not sd_root.is_dir():
@@ -2271,26 +2296,22 @@ def cmd_clear_images(args: argparse.Namespace) -> int:
                     logger.error("Failed to delete %s: %s", f, e)
                     had_errors = True
 
-        # Duo thumbs bundle (e.g. pce_thumbs.bin / pcecd_thumbs.bin) — only on Duo
-        if device == "duo":
-            thumbs_rel = DUO_THUMBS_FILES.get(console_key)
-            if thumbs_rel is not None:
-                thumbs_path = sd_root / thumbs_rel
-                if thumbs_path.exists():
-                    try:
-                        size = thumbs_path.stat().st_size
-                        if dry_run:
-                            print(
-                                f"  {prefix}would remove  {thumbs_path.relative_to(sd_root)}"
-                            )
-                        else:
-                            thumbs_path.unlink()
-                            logger.debug("Removed %s", thumbs_path)
-                        removed += 1
-                        bytes_freed += size
-                    except OSError as e:
-                        logger.error("Failed to delete %s: %s", thumbs_path, e)
-                        had_errors = True
+        thumbs_path = sd_root / pocket_thumbs_rel(console_key)
+        if thumbs_path.is_file():
+            try:
+                size = thumbs_path.stat().st_size
+                if dry_run:
+                    print(
+                        f"  {prefix}would remove  {thumbs_path.relative_to(sd_root)}"
+                    )
+                else:
+                    thumbs_path.unlink()
+                    logger.debug("Removed %s", thumbs_path)
+                removed += 1
+                bytes_freed += size
+            except OSError as e:
+                logger.error("Failed to delete %s: %s", thumbs_path, e)
+                had_errors = True
 
         kb = bytes_freed / 1024
         action = "would remove" if dry_run else "removed"
