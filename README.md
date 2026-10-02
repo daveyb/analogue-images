@@ -73,6 +73,7 @@ Use `convert-only` to skip re-downloading images already in the local cache.
 2. **Reads** your played-games list from `System/Played Games/list.bin` on the SD card — only games you've actually launched get images
 3. **Matches** each game by name to a libretro thumbnail using fuzzy matching
 4. **Converts** the matched image to Analogue's `.bin` format and writes it to `System/Library/Images/<console>/` on the SD card, named after the game's CRC32
+5. **Updates** the Pocket library grid file `System/Library/Images/<console>_thumbs.bin` so every CRC image is in the list. Images already in that file keep their pixels. New files are center-cropped to the grid cell, 109 by 121 pixels stored.
 
 The script is **idempotent**: re-running it skips files that already exist. Use `--force` to overwrite everything.
 
@@ -96,7 +97,7 @@ The script is **idempotent**: re-running it skips files that already exist. Use 
 
 ### Clearing images
 
-To remove all converted images from the SD card without touching the played-games database:
+To remove converted images from the SD card without touching the played-games database. This also removes the matching `<console>_thumbs.bin` grid file:
 
 ```bash
 # Remove all images

@@ -27,15 +27,15 @@ except ImportError:
     sys.exit("Pillow is required: pip install Pillow")
 
 from analogue_image_gen import (
-    PCE_THUMBS_HASH_ENTRY_SIZE,
-    PCE_THUMBS_HASH_SLOTS,
-    PCE_THUMBS_HEADER_SIZE,
-    PCE_THUMBS_MAGIC,
-    PCE_THUMBS_THUMB_HEIGHT,
     POCKET_BIN_MAGIC,
     POCKET_BIN_TARGET_HEIGHT,
+    POCKET_THUMB_BYTES,
+    POCKET_THUMB_STORED_HEIGHT,
+    POCKET_THUMB_STORED_WIDTH,
+    POCKET_THUMBS_IMAGE_OFFSET,
+    POCKET_THUMBS_MAGIC,
     convert_image_to_pocket_bin,
-    generate_pce_thumbs_bin,
+    sync_pocket_thumbs,
 )
 
 # ---------------------------------------------------------------------------
@@ -207,165 +207,109 @@ def test_bonks_adventure_name_file(name_path: Path | None) -> None:
 
 
 # ---------------------------------------------------------------------------
-# pce_thumbs.bin tests
+# Library grid bundle tests
 # ---------------------------------------------------------------------------
 
 BONK_CRC = 0x599EAD9B
 
 
-def _make_fake_bin(crc: int, h: int, w: int) -> bytes:
-    pixel_data = bytes([0x00, 0x00, 0xFF, 0xFF]) * (h * w)
-    return POCKET_BIN_MAGIC + struct.pack("<HH", h, w) + pixel_data
+def _solid_library_bin(width: int, height: int, pixel: bytes) -> bytes:
+    return POCKET_BIN_MAGIC + struct.pack("<HH", height, width) + pixel * (width * height)
 
 
-def _thumb_dims(orig_h: int, orig_w: int) -> tuple[int, int]:
-    scale = PCE_THUMBS_THUMB_HEIGHT / orig_h
-    return PCE_THUMBS_THUMB_HEIGHT, max(1, int(orig_w * scale))
-
-
-def _thumb_size(orig_h: int, orig_w: int) -> int:
-    th, tw = _thumb_dims(orig_h, orig_w)
-    return 8 + th * tw * 4
-
-
-def _hash_slot(crc: int) -> int:
-    return crc % PCE_THUMBS_HASH_SLOTS
-
-
-def test_pce_thumbs_structure(tmp_dir: Path) -> None:
-    print("\n[Test] pce_thumbs.bin structure")
-    src = tmp_dir / "thumbs_src"
+def test_grid_bundle_layout(tmp_dir: Path) -> None:
+    print("\n[Test] library grid bundle layout")
+    src = tmp_dir / "grid_src"
     src.mkdir()
     out = tmp_dir / "pce_thumbs.bin"
-    src_dims = [(200, 160), (180, 140)]
-    crcs = [0x11223344, 0xAABBCCDD]
-    expected_data_size = 0
-    for c, (sh, sw) in zip(crcs, src_dims):
-        data = _make_fake_bin(c, sh, sw)
-        (src / f"{c:08x}.bin").write_bytes(data)
-        expected_data_size += _thumb_size(sh, sw)
-    ok = generate_pce_thumbs_bin(src, out)
-    _check("generate_pce_thumbs_bin returned True", ok)
+    pixel = bytes([1, 2, 3, 255])
+    (src / "11223344.bin").write_bytes(
+        _solid_library_bin(POCKET_THUMB_STORED_WIDTH, POCKET_THUMB_STORED_HEIGHT, pixel)
+    )
+    (src / "aabbccdd.bin").write_bytes(_solid_library_bin(200, 80, pixel))
+    stats = sync_pocket_thumbs(src, out)
+    _check("sync wrote the bundle", stats["wrote"] is True and stats["images"] == 2)
     raw = out.read_bytes()
-    _check("File exists and is non-empty", len(raw) > PCE_THUMBS_HEADER_SIZE)
-    _check("Magic == 02 46 54 41", raw[:4] == PCE_THUMBS_MAGIC, raw[:4].hex())
-    data_size = struct.unpack_from("<I", raw, 4)[0]
-    _check("data_size == sum of thumbnail entry sizes", data_size == expected_data_size, f"data_size={data_size}, expected={expected_data_size}")
-    img_count = struct.unpack_from("<I", raw, 8)[0]
-    _check("image count == 2", img_count == 2, f"got {img_count}")
-    _check("file size == header + data_size", len(raw) == PCE_THUMBS_HEADER_SIZE + data_size, f"file={len(raw)}, expected={PCE_THUMBS_HEADER_SIZE + data_size}")
+    _check("Magic == 02 46 54 41", raw[:4] == POCKET_THUMBS_MAGIC, raw[:4].hex())
+    per_image, count = struct.unpack_from("<II", raw, 4)
+    _check("per-image size == 52764", per_image == POCKET_THUMB_BYTES, str(per_image))
+    _check("image count == 2", count == 2, str(count))
+    first_crc, first_off = struct.unpack_from("<II", raw, 12)
+    second_crc, second_off = struct.unpack_from("<II", raw, 20)
+    _check("first slot offset == 65548", first_off == POCKET_THUMBS_IMAGE_OFFSET, str(first_off))
+    _check(
+        "second slot follows the first image",
+        second_off == POCKET_THUMBS_IMAGE_OFFSET + POCKET_THUMB_BYTES,
+        str(second_off),
+    )
+    _check("slots are sequential, not hashed", {first_crc, second_crc} == {0x11223344, 0xAABBCCDD})
+    stored_h, stored_w = struct.unpack_from("<HH", raw, first_off + 4)
+    _check(
+        "stored size is 121 by 109",
+        (stored_h, stored_w) == (POCKET_THUMB_STORED_HEIGHT, POCKET_THUMB_STORED_WIDTH),
+        f"{stored_h}x{stored_w}",
+    )
+    again = sync_pocket_thumbs(src, out)
+    _check("second sync does not rewrite", again["wrote"] is False and out.read_bytes() == raw)
 
 
-def test_pce_thumbs_hash_table(tmp_dir: Path) -> None:
-    print("\n[Test] pce_thumbs.bin hash table correctness")
-    src = tmp_dir / "thumbs_hash_src"
+def test_grid_ignores_name_files(tmp_dir: Path) -> None:
+    print("\n[Test] library grid ignores name-based files")
+    src = tmp_dir / "grid_names"
     src.mkdir()
-    out = tmp_dir / "pce_thumbs_hash.bin"
-    crcs = [0x6AA69A8B, 0x12345678, 0xDEADBEEF]
-    src_h, src_w = 200, 160
-    thumb_sz = _thumb_size(src_h, src_w)
-    data_map: dict[int, bytes] = {}
-    for c in crcs:
-        data = _make_fake_bin(c, src_h, src_w)
-        (src / f"{c:08x}.bin").write_bytes(data)
-        data_map[c] = data
-    generate_pce_thumbs_bin(src, out)
-    raw = out.read_bytes()
-    sorted_crcs = sorted(data_map.keys(), key=lambda c: f"{c:08x}")
-    expected_offsets: dict[int, int] = {}
-    offset = 0
-    for c in sorted_crcs:
-        expected_offsets[c] = offset
-        offset += thumb_sz
-    for c in crcs:
-        slot = _hash_slot(c)
-        found_slot = None
-        for probe in range(PCE_THUMBS_HASH_SLOTS):
-            s = (slot + probe) % PCE_THUMBS_HASH_SLOTS
-            off = 12 + s * PCE_THUMBS_HASH_ENTRY_SIZE
-            if struct.unpack_from("<I", raw, off)[0] == c:
-                found_slot = s
-                break
-        _check(f"CRC {c:08x} found in hash table", found_slot is not None, f"expected near slot {slot}")
-        if found_slot is not None:
-            off = 12 + found_slot * PCE_THUMBS_HASH_ENTRY_SIZE
-            data_off = struct.unpack_from("<I", raw, off + 4)[0]
-            _check(f"CRC {c:08x} data_offset correct", data_off == expected_offsets[c], f"got {data_off}, expected {expected_offsets[c]}")
+    out = tmp_dir / "ngp_thumbs.bin"
+    (src / "cafebabe.bin").write_bytes(_solid_library_bin(40, 60, bytes([9, 9, 9, 255])))
+    (src / "Bonk's Adventure.bin").write_bytes(_solid_library_bin(40, 60, bytes([9, 9, 9, 255])))
+    sync_pocket_thumbs(src, out)
+    count = struct.unpack_from("<I", out.read_bytes(), 8)[0]
+    _check("only the CRC file is in the bundle", count == 1, str(count))
 
 
-def test_pce_thumbs_image_data(tmp_dir: Path) -> None:
-    print("\n[Test] pce_thumbs.bin image data integrity")
-    src = tmp_dir / "thumbs_img_src"
+def test_grid_keeps_existing_pixels(tmp_dir: Path) -> None:
+    print("\n[Test] library grid keeps pixels already in the bundle")
+    src = tmp_dir / "grid_keep"
     src.mkdir()
-    out = tmp_dir / "pce_thumbs_img.bin"
-    src_h, src_w = 200, 160
-    th, tw = _thumb_dims(src_h, src_w)
-    crcs = [0xAABBCCDD, 0x11223344]
-    for c in crcs:
-        (src / f"{c:08x}.bin").write_bytes(_make_fake_bin(c, src_h, src_w))
-    generate_pce_thumbs_bin(src, out)
-    raw = out.read_bytes()
-    for c in crcs:
-        slot = _hash_slot(c)
-        for probe in range(PCE_THUMBS_HASH_SLOTS):
-            s = (slot + probe) % PCE_THUMBS_HASH_SLOTS
-            off = 12 + s * PCE_THUMBS_HASH_ENTRY_SIZE
-            if struct.unpack_from("<I", raw, off)[0] == c:
-                data_off = struct.unpack_from("<I", raw, off + 4)[0]
-                img_start = PCE_THUMBS_HEADER_SIZE + data_off
-                img_magic = raw[img_start: img_start + 4]
-                _check(f"CRC {c:08x} image magic == ' IPA'", img_magic == POCKET_BIN_MAGIC, img_magic.hex())
-                stored_h = struct.unpack_from("<H", raw, img_start + 4)[0]
-                stored_w = struct.unpack_from("<H", raw, img_start + 6)[0]
-                _check(f"CRC {c:08x} thumbnail height == {PCE_THUMBS_THUMB_HEIGHT}", stored_h == PCE_THUMBS_THUMB_HEIGHT, f"h={stored_h}")
-                _check(f"CRC {c:08x} thumbnail width == {tw}", stored_w == tw, f"w={stored_w}")
-                break
+    out = tmp_dir / "gg_thumbs.bin"
+    red = bytes([0, 0, 255, 255])
+    (src / "00000001.bin").write_bytes(_solid_library_bin(30, 40, red))
+    sync_pocket_thumbs(src, out)
+    first = out.read_bytes()
+    per = struct.unpack_from("<I", first, 4)[0]
+    off = struct.unpack_from("<I", first, 16)[0]
+    kept = first[off : off + per]
+    (src / "00000002.bin").write_bytes(_solid_library_bin(30, 40, bytes([255, 0, 0, 255])))
+    sync_pocket_thumbs(src, out)
+    second = out.read_bytes()
+    count = struct.unpack_from("<I", second, 8)[0]
+    off2 = struct.unpack_from("<I", second, 16)[0]
+    _check("count grew to 2", count == 2, str(count))
+    _check("first image bytes are unchanged", second[off2 : off2 + per] == kept)
 
 
-def test_pce_thumbs_no_dir_variants(tmp_dir: Path) -> None:
-    print("\n[Test] pce_thumbs.bin ignores non-CRC filenames")
-    src = tmp_dir / "thumbs_nodir_src"
-    src.mkdir()
-    out = tmp_dir / "pce_thumbs_nodir.bin"
-    crc = 0xCAFEBABE
-    (src / f"{crc:08x}.bin").write_bytes(_make_fake_bin(crc, 10, 8))
-    (src / "Bonk's Adventure.bin").write_bytes(_make_fake_bin(0, 10, 8))
-    (src / "some_name.bin").write_bytes(_make_fake_bin(0, 10, 8))
-    generate_pce_thumbs_bin(src, out)
-    raw = out.read_bytes()
-    img_count = struct.unpack_from("<I", raw, 8)[0]
-    _check("Only 1 image included (CRC-named only)", img_count == 1, f"got {img_count}")
-
-
-def test_pce_thumbs_bonk_on_sd(sd_thumbs_path: Path | None) -> None:
+def test_sd_grid_bundle(sd_thumbs_path: Path | None) -> None:
     print("\n[Test] SD card pce_thumbs.bin structure")
     if sd_thumbs_path is None or not sd_thumbs_path.exists():
         print("  [SKIP] pce_thumbs.bin not on SD card")
         return
     raw = sd_thumbs_path.read_bytes()
-    _check("Magic == 02 46 54 41", raw[:4] == PCE_THUMBS_MAGIC, raw[:4].hex())
-    data_size = struct.unpack_from("<I", raw, 4)[0]
-    img_count = struct.unpack_from("<I", raw, 8)[0]
-    _check("Image count > 0", img_count > 0, f"count={img_count}")
-    _check("File size == header + data_size", len(raw) == PCE_THUMBS_HEADER_SIZE + data_size, f"file={len(raw)}, expected={PCE_THUMBS_HEADER_SIZE + data_size}")
-    bonk_slot = _hash_slot(BONK_CRC)
-    bonk_found = False
-    for probe in range(PCE_THUMBS_HASH_SLOTS):
-        s = (bonk_slot + probe) % PCE_THUMBS_HASH_SLOTS
-        off = 12 + s * PCE_THUMBS_HASH_ENTRY_SIZE
-        if struct.unpack_from("<I", raw, off)[0] == BONK_CRC:
-            bonk_found = True
-            data_off = struct.unpack_from("<I", raw, off + 4)[0]
-            img_start = PCE_THUMBS_HEADER_SIZE + data_off
-            img_magic = raw[img_start: img_start + 4]
-            _check("Bonk image magic == ' IPA'", img_magic == POCKET_BIN_MAGIC, img_magic.hex())
-            h = struct.unpack_from("<H", raw, img_start + 4)[0]
-            w = struct.unpack_from("<H", raw, img_start + 6)[0]
-            _check("Bonk image has valid dimensions", h > 0 and w > 0, f"h={h}, w={w}")
-            _check(f"Bonk image height == {PCE_THUMBS_THUMB_HEIGHT}", h == PCE_THUMBS_THUMB_HEIGHT, f"h={h}")
-            _check("Bonk image pixel data size == w*h*4", len(raw) >= img_start + 8 + w * h * 4, f"w={w}, h={h}")
+    _check("Magic == 02 46 54 41", raw[:4] == POCKET_THUMBS_MAGIC, raw[:4].hex())
+    per_image, count = struct.unpack_from("<II", raw, 4)
+    _check("per-image size == 52764", per_image == POCKET_THUMB_BYTES, str(per_image))
+    _check("image count > 0", count > 0, str(count))
+    found = False
+    for index in range(count):
+        crc, offset = struct.unpack_from("<II", raw, 12 + index * 8)
+        if crc == BONK_CRC:
+            found = True
+            _check("Bonk offset points at an IPA image", raw[offset : offset + 4] == POCKET_BIN_MAGIC)
+            h, w = struct.unpack_from("<HH", raw, offset + 4)
+            _check(
+                "Bonk grid image is 121 by 109",
+                (h, w) == (POCKET_THUMB_STORED_HEIGHT, POCKET_THUMB_STORED_WIDTH),
+                f"{h}x{w}",
+            )
             break
-    _check("Bonk's Adventure (CRC 599ead9b) in hash table", bonk_found)
+    _check("Bonk's Adventure (CRC 599ead9b) is in the grid", found)
 
 
 # ---------------------------------------------------------------------------
@@ -378,11 +322,17 @@ def main() -> int:
     print("Analogue Pocket .bin conversion tests")
     print("=" * 60)
 
-    sd_pce_dir = Path(r"E:\System\Library\Images\pce")
+    sd_images = None
+    for root in (Path("D:/"), Path("E:/")):
+        candidate = root / "System" / "Library" / "Images"
+        if (candidate / "pce").is_dir():
+            sd_images = candidate
+            break
+    sd_pce_dir = (sd_images / "pce") if sd_images else Path("missing")
     sd_bonks = sd_pce_dir / "599ead9b.bin"
     sd_bonks_name = sd_pce_dir / "Bonk's Adventure (USA).bin"
     sd_bonks_db_name = sd_pce_dir / "Bonk's Adventure.bin"
-    sd_thumbs = sd_pce_dir / "pce_thumbs.bin"
+    sd_thumbs = (sd_images / "pce_thumbs.bin") if sd_images else None
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
@@ -396,11 +346,10 @@ def main() -> int:
             test_bonks_adventure_bin(sd_bonks, tmp_dir)
             test_bonks_adventure_name_file(sd_bonks_name)
             test_bonks_adventure_name_file(sd_bonks_db_name)
-            test_pce_thumbs_structure(tmp_dir)
-            test_pce_thumbs_hash_table(tmp_dir)
-            test_pce_thumbs_image_data(tmp_dir)
-            test_pce_thumbs_no_dir_variants(tmp_dir)
-            test_pce_thumbs_bonk_on_sd(sd_thumbs)
+            test_grid_bundle_layout(tmp_dir)
+            test_grid_ignores_name_files(tmp_dir)
+            test_grid_keeps_existing_pixels(tmp_dir)
+            test_sd_grid_bundle(sd_thumbs)
         except Exception:
             traceback.print_exc()
             return 1

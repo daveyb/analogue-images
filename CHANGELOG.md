@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-02
+
+### Added
+
+- Pocket library grid bundles. `auto` and `convert-only` write `System/Library/Images/<console>_thumbs.bin` for Game Gear, Game Boy Advance, Neo Geo Pocket, and PC Engine. The file uses the layout Pocket firmware 2.5 reads: 8192 sequential CRC slots, absolute offsets, and one 109 by 121 image per game. A CRC already in the bundle keeps its pixels. `clear-images` removes the bundle with the per-game files.
+- Unit tests for `configure_logging()` handler management in `tests/test_utilities.py`.
+- Unit tests for the grid bundle layout in `tests/test_thumbs.py`.
+
 ### Changed
 
 - Updated dependency minimum versions in `requirements.txt` (`Pillow>=10.1.0`, `requests>=2.31.0`, `pytest>=8.0.0`, `pytest-cov>=5.0.0`, `pytest-mock>=3.12.0`).
@@ -14,13 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed `configure_logging()` in `analogue_image_gen.py` to clear existing handlers before adding a new handler, preventing duplicate log output on multiple calls.
+- Replaced the grid packer. It used to write a CRC hash table of 165 px images with offsets relative to the image section. Firmware 2.5 does not read that layout, so the library list omitted games that already had a per-game file.
 
-### Added
-
-- Added unit tests for `configure_logging()` handler management in `tests/test_utilities.py`.
-
-[Unreleased]: https://github.com/<owner>/analogue-images/compare/v0.4.4...HEAD
-[0.4.4]: https://github.com/<owner>/analogue-images/compare/v0.4.3...v0.4.4
 ## [0.4.4] - 2026-04-14
 
 ### Added
@@ -114,7 +117,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial public release with support for GBA, NGP, PCE, and PCECD image
   generation for the Analogue Pocket and Duo.
 
-[Unreleased]: https://github.com/daveyb/analogue-images/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/daveyb/analogue-images/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/daveyb/analogue-images/compare/v0.4.4...v0.5.0
+[0.4.4]: https://github.com/daveyb/analogue-images/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/daveyb/analogue-images/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/daveyb/analogue-images/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/daveyb/analogue-images/compare/v0.4.0...v0.4.1

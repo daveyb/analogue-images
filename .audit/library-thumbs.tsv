@@ -1,0 +1,11 @@
+ts	phase	decision	why	evidence	result
+2026-10-02T19:41:10Z	start	opened the review-to-merge run on analogue-images	the card on D: and a minor changelog cut are the job	branch feat/pocket-grid-thumbs	open
+2026-10-02T19:50:00Z	frame	done means v0.5.0 is merged, release CI is green, and D:\ grid bundles match firmware 2.5	a minor bump needs new behavior, and the card is the real artifact	CHANGELOG.md release script	open
+2026-10-02T20:05:00Z	census	rejected Game Boy and Game Boy Color support	list.bin has no GB or GBC plays, and those system ids are still placeholders	D:\System\Played Games\list.bin systems 0x02, 0x03, 0x06, 0x07	skipped
+2026-10-02T20:20:00Z	census	the grid packer was a hash table of 165px images and the CLI never called it	all four bundles on the card are sequential slots, absolute offsets, 52764-byte images, 121 by 109	D:\System\Library\Images\*_thumbs.bin	premise rejected
+2026-10-02T20:40:00Z	packer	pack_pocket_thumbs round-tripped the four card bundles byte for byte before any write	the writer has to match files the Pocket already shows	gba 171076, gg 171076, ngp 540424, pce 804244 equal	VERIFIED
+2026-10-02T20:55:00Z	sync	rewrote ngp and pce grids, left gba and gg untouched	Becky, Blazing Lazers, and Order of the Griffon had per-game files and no grid slot	ngp 9 to 10, pce 14 to 16, prior blobs identical, second sync wrote nothing	VERIFIED
+2026-10-02T21:05:00Z	sync	looked at the three new grid images next to their per-game files	a center crop has to stay the same cover, upright	Temp thumb-compare blazing, becky, dnd	same artwork
+2026-10-02T21:15:00Z	cli	ran convert-only for ngp on D:\ with an empty cache	that command must not delete bins and must not rewrite a current bundle	ngp bin count 34 stayed 34, thumbs sha256 unchanged	VERIFIED
+2026-10-02T21:15:30Z	tests	pytest tests passed, and the manual script read the card bundle	the layout assertions use literal offsets 65548 and size 52764	83 passed, script 47 passed, pce count 16	VERIFIED
+2026-10-02T21:40:00Z	comments	deleted restated comments and kept the public function contracts	comment review listed 13 cuts and no must-kill flags	analogue_image_gen.py	kept magic note and command docstrings
